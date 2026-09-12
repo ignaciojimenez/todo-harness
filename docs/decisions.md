@@ -1,0 +1,14 @@
+# Decisions
+
+One-liner record of architecture/strategy calls. Newest first.
+
+## 2026-09-12
+
+- **Sources are state-shaped, never event-shaped.** A source emits the complete set of what is true on every sweep, and absence is the signal to close. Event streams — webhooks, advisory emails — cannot express "no longer true", which is how a tracker fills with work that was fixed weeks ago. This is the single constraint the whole design rests on; everything else follows from it.
+- **`reconcile()` is pure, and IO lives at the edges.** It takes findings, tracker state and store state, and returns actions. No network, no clock, no writes. Two consequences that justify the shape on their own: the rules are testable without a fixture server, and `--plan` is not a feature to implement but the return value printed instead of applied — so there is no second code path that can drift from the real one.
+- **Four ports, as `Protocol`s rather than base classes.** `Source` / `Tracker` / `Store` / `Notifier`. Structural typing means an implementation need not import this package at all, which keeps the abstraction honest: if a port is awkward to satisfy, that is a fact about the port rather than something inheritance can paper over.
+- **Closing requires N consecutive clear sweeps, never one.** A fault that alternates pass/fail defeats single-sweep logic and churns the queue, which is worse than not reconciling at all — it trains the owner to ignore the tracker. `Policy` refuses to construct with `close_after_clear_sweeps < 2` rather than trusting callers.
+- **Removing the managed label is the adopt gesture, and it must work silently.** The harness only touches issues carrying its label, so a human takes ownership by deleting a label and the harness stops — no config change, no deregistration, no way to forget. Verified by a test that a labelless issue is never closed even with a 99-sweep absence streak.
+- **The store lives with the runner, never in the tracker.** Key→id mapping and clear-streak counters are the harness's state, not the tracker's. Putting them in issue metadata would make the tracker load-bearing and the exit expensive; a JSON file or a KV namespace costs nothing and can be thrown away.
+- **The label policy strips only what is outside the configured contract.** An unrecognised label a human added deliberately (`needs:choco`) survives; a tracker default nobody adopted (`Improvement`) does not. With no contract configured it touches nothing — a normaliser that tidies beyond its mandate is a normaliser people turn off.
+- **Tests mutate the rules to prove they can fail.** A green suite against a reconciler that returns no actions would also be green. Both load-bearing rules were verified by breaking them and confirming the suite caught it — single-sweep closing and the adopt gesture.

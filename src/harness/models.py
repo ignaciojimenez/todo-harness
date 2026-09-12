@@ -1,0 +1,125 @@
+"""Core data types.
+
+Everything here is frozen and free of IO. The reconciler turns these into
+`Action`s; a runner decides whether to print them or apply them. That split is
+what makes `--plan` a property of the design rather than a feature bolted on.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Mapping
+
+
+class Lane(str, Enum):
+    """Where a finding's attention should go.
+
+    Deliberately not a severity. Severity describes the finding; a lane
+    describes what a human is expected to do about it, which is the only thing
+    a tracker can act on.
+    """
+
+    PAGE = "page"  # wake someone: goes to the alerting channel, never the tracker
+    PLAN = "plan"  # a tracker issue: real work, but nobody is woken
+    SILENT = "silent"  # recorded for audit, never becomes an issue
+
+
+@dataclass(frozen=True, slots=True)
+class Finding:
+    """Something a source asserts is true *right now*.
+
+    A source emits the complete set of findings on every sweep. Absence is
+    meaningful: a finding that stops being emitted is the signal to close its
+    issue. This is why sources must be state-shaped rather than event-shaped —
+    an event stream cannot express "no longer true".
+    """
+
+    key: str
+    """Stable identity across sweeps. The dedup key, and the thing the store
+    maps to a tracker id. Must not embed anything that changes while the
+    finding persists (timestamps, counts, severity)."""
+
+    title: str
+    body: str = ""
+    lane: Lane = Lane.PLAN
+    labels: frozenset[str] = frozenset()
+    project: str | None = None
+    priority: int | None = None
+    extra: Mapping[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class Issue:
+    """A tracker issue as it currently exists."""
+
+    id: str
+    title: str
+    body: str = ""
+    labels: frozenset[str] = frozenset()
+    project: str | None = None
+    priority: int | None = None
+    closed: bool = False
+
+
+# ── Actions ──────────────────────────────────────────────────────────────────
+# A source's entire output. Data, never a side effect, so the same plan can be
+# printed, diffed, reviewed, or applied.
+
+
+@dataclass(frozen=True, slots=True)
+class Open:
+    finding: Finding
+    why: str
+
+
+@dataclass(frozen=True, slots=True)
+class Update:
+    issue_id: str
+    why: str
+    title: str | None = None
+    body: str | None = None
+    project: str | None = None
+    priority: int | None = None
+    add_labels: frozenset[str] = frozenset()
+    remove_labels: frozenset[str] = frozenset()
+
+
+@dataclass(frozen=True, slots=True)
+class Close:
+    issue_id: str
+    why: str
+
+
+@dataclass(frozen=True, slots=True)
+class Comment:
+    issue_id: str
+    body: str
+    why: str
+
+
+Action = Open | Update | Close | Comment
+
+
+@dataclass(frozen=True, slots=True)
+class Heartbeat:
+    """Emitted every run, including — especially — when nothing happened.
+
+    A sweep that says nothing when it finds nothing is indistinguishable from a
+    sweep that has been dead for a fortnight. This type exists so that silence
+    is never the success signal.
+    """
+
+    source: str
+    swept: int
+    opened: int
+    updated: int
+    closed: int
+    errors: int = 0
+
+    def line(self) -> str:
+        s = (
+            f"{self.source}: swept {self.swept} · opened {self.opened} "
+            f"· updated {self.updated} · closed {self.closed}"
+        )
+        return s + f" · errors {self.errors}" if self.errors else s

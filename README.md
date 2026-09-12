@@ -1,0 +1,55 @@
+# todo-harness
+
+Keeps a task tracker agreeing with what is actually true, on a schedule.
+
+Most tooling around trackers is event-shaped: something happens, an issue is
+created. Events cannot retract, so the tracker slowly fills with work that is
+no longer real and stops being trustworthy. This is the other shape — sources
+declare what is true *now*, and the harness opens, updates and closes to match.
+
+## How it fits together
+
+```
+Source ──findings──▶ reconcile() ──actions──▶ Tracker
+                          ▲                      │
+                        Store ◀──────────────────┘
+                     (key→id, streaks)      Notifier ◀── heartbeat
+```
+
+Four ports, all `Protocol`s — implement the shape, inherit nothing:
+
+| Port | Swap it to | Ships with |
+|---|---|---|
+| `Source` | a different sweep | triage normaliser |
+| `Tracker` | GitHub Issues, Jira, a file | Linear |
+| `Store` | KV, SQLite, a file | JSON file |
+| `Notifier` | Slack, healthchecks.io | stdout |
+
+`reconcile()` is pure — no IO — so `--plan` is not a feature, it is just
+printing the return value. Run it against production and nothing happens.
+
+## Rules it enforces, and why
+
+- **Absence closes, but never on one sweep.** A finding that stops being
+  emitted is no longer true; a finding that flaps would otherwise churn the
+  queue forever. Closing needs N consecutive clear sweeps.
+- **Removing the managed label stops everything.** That is the *adopt* gesture:
+  a human takes an issue and the harness goes quiet without being told.
+- **A heartbeat every run, including empty ones.** A sweep that only speaks when
+  it finds something is indistinguishable from one that died a fortnight ago.
+- **Silent findings never become issues.** A queue is for actions.
+
+## Use
+
+```bash
+pip install -e ".[dev]"
+pytest                      # the reconciler needs no network to be tested
+harness plan                # show what would change
+harness apply               # do it
+```
+
+## Docs
+
+[`docs/decisions.md`](docs/decisions.md) — one-line record of the design calls.
+
+MIT.
