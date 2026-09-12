@@ -82,6 +82,10 @@ class Store(Protocol):
     def bump_clear_streak(self, key: str) -> int: ...
     def reset_clear_streak(self, key: str) -> None: ...
 
+    def record_run(self, entry: dict, keep: int = 50) -> None:
+        """Durable record of what a run did and why. See `JsonStore.record_run`."""
+        ...
+
 
 @runtime_checkable
 class Notifier(Protocol):

@@ -28,6 +28,7 @@ class JsonStore:
             self._data.update(json.loads(self.path.read_text() or "{}"))
         self._data.setdefault("issue_ids", {})
         self._data.setdefault("streaks", {})
+        self._data.setdefault("runs", [])
 
     # reads
     @property
@@ -59,6 +60,23 @@ class JsonStore:
     def reset_clear_streak(self, key: str) -> None:
         if self._data["streaks"].pop(key, None) is not None:
             self.flush()
+
+    def record_run(self, entry: dict, keep: int = 50) -> None:
+        """Append a run record, newest last, capped.
+
+        Every action carries a `why`. Without this it is printed to a job log
+        that expires, and three weeks later nothing can say which sweep closed
+        an issue or on what evidence. An unaccountable reconciler is one people
+        stop trusting the moment it does something surprising.
+        """
+        runs = self._data["runs"]
+        runs.append(entry)
+        del runs[:-keep]
+        self.flush()
+
+    @property
+    def runs(self) -> list[dict]:
+        return self._data["runs"]
 
     def flush(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

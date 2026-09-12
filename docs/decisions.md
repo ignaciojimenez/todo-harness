@@ -2,6 +2,15 @@
 
 One-liner record of architecture/strategy calls. Newest first.
 
+## 2026-09-12 (operability)
+
+- **A heartbeat you have to go and look at is not a heartbeat.** The first version printed `swept 0` to stdout and called that a heartbeat. If the job stops running entirely — workflow disabled, key revoked, quota exhausted — the log simply stops and nothing notices, which is the agent-lxc twelve-day silence rebuilt inside the thing meant to prevent it. `HealthchecksNotifier` pings `/start`, then success or `/fail`, to an external dead-man's switch that alerts on *absence*. Only something outside the process can tell "healthy and quiet" from "dead".
+- **A failed ping is loud but never fatal.** Taking the sweep down because monitoring is unreachable turns a monitoring outage into a work outage, and loses nothing: the missing ping is already the alert.
+- **The circuit breaker refuses; it does not apply a subset.** A source with a bad config can propose a great deal very quickly — the security prototype's backtest moved 7→21 escalations on three bugs, and a fourth could have gone further. Over `--max-actions`, `apply` refuses the whole plan, exits non-zero, and reports an *error*, so a run that declined to act can never be mistaken for a healthy quiet one. `plan` is never blocked: planning writes nothing, so a large plan is information rather than a hazard.
+- **Every applied action is recorded with its `why`.** Actions carry a reason that was previously printed to a job log and discarded. Three weeks later nothing could say which sweep closed an issue or on what evidence, and an unaccountable reconciler is one people stop trusting the first time it surprises them. Capped at 50 runs in the store.
+- **Sources are selected per deployment, not compiled in.** `--sources` against a registry, because where a source can run is a property of the source: triage is pure HTTP and belongs in CI, a fleet sweep needs LAN access and `read_agent` and must run on the box. Same binary, different flags. There is deliberately **no Runner port** — the CLI is the runner, and where it runs is deployment, not abstraction.
+- **Streams resolve at call time, not at import.** `stream = sys.stderr` as a class attribute captures whatever was installed when the module loaded, so output escaped redirection and a test silently passed against the wrong stream. Found by a failing test, not by reading.
+
 ## 2026-09-12
 
 - **Sources are state-shaped, never event-shaped.** A source emits the complete set of what is true on every sweep, and absence is the signal to close. Event streams — webhooks, advisory emails — cannot express "no longer true", which is how a tracker fills with work that was fixed weeks ago. This is the single constraint the whole design rests on; everything else follows from it.
