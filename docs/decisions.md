@@ -2,6 +2,14 @@
 
 One-liner record of architecture/strategy calls. Newest first.
 
+## 2026-09-12 (the label contract)
+
+- **Three label groups, and native estimates for size.** `agent` (who may close), `needs` (what blocks it *now*), `kind` (what sort of work). Groups are mutually exclusive in Linear, which is the point — an issue has one current blocker and one kind. Size is **not** a label: `effort` is a reserved name in Linear because estimates are a first-class field, so t-shirt estimates were enabled instead. Sortable and filterable without spending labels.
+- **`kind` is orthogonal to priority and earns its own axis.** The priority bands already say "High = known risk", but a broken thing can be low priority and a new capability can be urgent. The stronger argument is for the autonomous layer: a fix has an obvious acceptance test — the broken thing works — and a new capability does not, which changes whether an agent can verify its own work. Values: `broken` / `risk` / `debt` / `new` / `improvement`, where `risk` covers "works today, known weakness or unverified control" and was added after three real issues fitted none of the other four.
+- **The old `needs:choco` fused two things with opposite answers.** Deciding the git-history question and standing at the cabinet with a tape measure are both "blocked on Ignacio", but one is doable from a train and the other is not. Split into `needs/decision` and `needs/hands`, plus `needs/laptop` for work needing a real session. The label records what blocks it **now**, not everything it will eventually need.
+- **Linear's stock Bug/Feature/Improvement were adopted, not deleted.** The first instinct was to delete them so a phone could not attach an unrecognised label. But `PER-53` arrived carrying `Improvement` and genuinely *was* one — the sweep stripped real signal because the contract had no slot for it. Renaming them into the `kind` group preserves their ids, their place in the mobile picker, and the issues already using them.
+- **Grouped labels are addressed as `parent/child` everywhere above the adapter.** Linear stores a grouped label's name without its group, so a bare `decision` or `new` is ambiguous across groups and useless as a contract string. The Linear adapter composes the path on read and resolves it on write; nothing above it knows groups exist.
+
 ## 2026-09-12 (operability)
 
 - **Scheduled on GitHub Actions, four times a day, off the hour.** GitHub's docs name "the start of every hour" as a high-load window where scheduled events are delayed, so `17 */6 * * *`. Six-hourly rather than hourly because triage latency does not matter — untriaged is a legitimate state — while the period's real job is bounding how long a *dead* sweep goes unnoticed: 6h period plus 2h grace means under eight hours.

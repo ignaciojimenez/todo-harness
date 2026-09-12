@@ -21,7 +21,7 @@ _ISSUE_FIELDS = """
   id identifier title description url priority
   state { type }
   project { name }
-  labels { nodes { name } }
+  labels { nodes { name parent { name } } }
 """
 
 
@@ -76,7 +76,15 @@ class LinearTracker:
         if q.open_only:
             f["state"] = {"type": {"nin": ["completed", "canceled"]}}
         if q.label:
-            f["labels"] = {"some": {"name": {"eq": q.label}}}
+            # A grouped label is matched on its child name plus its parent, since
+            # Linear does not store the composed path.
+            if "/" in q.label:
+                parent, child = q.label.split("/", 1)
+                f["labels"] = {
+                    "some": {"name": {"eq": child}, "parent": {"name": {"eq": parent}}}
+                }
+            else:
+                f["labels"] = {"some": {"name": {"eq": q.label}}}
         if q.without_project is True:
             f["project"] = {"null": True}
         elif q.without_project is False:
@@ -118,10 +126,12 @@ class LinearTracker:
         self._project_ids = {n["name"]: n["id"] for n in nodes}
 
     def _load_labels(self) -> None:
-        nodes = self._gql("{ issueLabels(first: 250) { nodes { id name } } }")[
-            "issueLabels"
-        ]["nodes"]
-        self._label_ids = {n["name"]: n["id"] for n in nodes}
+        nodes = self._gql(
+            "{ issueLabels(first: 250) { nodes { id name parent { name } } } }"
+        )["issueLabels"]["nodes"]
+        # Keyed by composed path, so callers name labels the same way they read
+        # them back. Group nodes themselves are not applicable to issues.
+        self._label_ids = {_label_path(n): n["id"] for n in nodes}
 
     def _load_team(self) -> None:
         nodes = self._gql(
@@ -246,13 +256,25 @@ class LinearTracker:
         )
 
 
+def _label_path(node: dict) -> str:
+    """Render a grouped label as `group/child`.
+
+    Linear stores a grouped label's name without its group, so a bare child name
+    like `decision` or `new` is ambiguous across groups and useless as a contract
+    string. Composing the path keeps `agent/fleet` meaning what it always meant,
+    and makes `needs/laptop` unambiguous.
+    """
+    parent = (node.get("parent") or {}).get("name")
+    return f"{parent}/{node['name']}" if parent else node["name"]
+
+
 def _to_issue(n: dict) -> Issue:
     return Issue(
         id=n["id"],
         ref=n.get("identifier", ""),
         title=n.get("title") or "",
         body=n.get("description") or "",
-        labels=frozenset(x["name"] for x in (n.get("labels") or {}).get("nodes", [])),
+        labels=frozenset(_label_path(x) for x in (n.get("labels") or {}).get("nodes", [])),
         project=((n.get("project") or {}) or {}).get("name"),
         priority=n.get("priority"),
         closed=(n.get("state") or {}).get("type") in {"completed", "canceled"},

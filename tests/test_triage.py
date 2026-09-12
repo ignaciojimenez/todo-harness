@@ -10,7 +10,8 @@ from __future__ import annotations
 from harness.models import Issue, IssueQuery, Update
 from harness.sources.triage import TriageSource
 
-CONTRACT = frozenset({"agent/fleet", "agent/sec", "needs:choco"})
+CONTRACT = frozenset({"agent/fleet", "agent/sec", "needs/decision",
+                      "needs/laptop", "kind/broken", "kind/new"})
 PROJECTS = ["infrastructure-automation", "dotfiles", "touchid-agent", "No repo"]
 
 
@@ -71,7 +72,7 @@ def test_strips_labels_outside_the_contract():
 
 
 def test_keeps_contract_labels():
-    t = FakeTracker([Issue(id="1", title="x", labels=frozenset({"needs:choco"}))])
+    t = FakeTracker([Issue(id="1", title="x", labels=frozenset({"needs/decision"}))])
     assert list(source().plan(t)) == []
 
 

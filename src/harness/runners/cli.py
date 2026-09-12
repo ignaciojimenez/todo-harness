@@ -28,7 +28,16 @@ from ..sources.triage import TriageSource
 from ..stores import JsonStore
 from ..trackers.linear import LinearTracker
 
-DEFAULT_CONTRACT = "agent/fleet,agent/sec,needs:choco"
+DEFAULT_CONTRACT = ",".join(
+    [
+        "agent/fleet", "agent/sec",                      # who may close it
+        "needs/decision", "needs/hands", "needs/laptop",  # what blocks it now
+        "kind/broken", "kind/risk", "kind/debt", "kind/new", "kind/improvement",
+    ]
+)
+"""The tracker's label contract. Anything on an untriaged issue that is not in
+here gets stripped, so this list going stale is actively destructive — it would
+remove labels a human deliberately applied."""
 
 SOURCES: dict[str, Callable[[argparse.Namespace], Source]] = {
     "triage": lambda a: TriageSource(

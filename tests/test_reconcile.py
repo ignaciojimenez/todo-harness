@@ -13,7 +13,7 @@ from harness.models import Close, Finding, Issue, Lane, Open, Update
 from harness.reconcile import Policy, StreakReader, reconcile
 
 MANAGED = "agent/fleet"
-CONTRACT = frozenset({"agent/fleet", "agent/sec", "needs:choco"})
+CONTRACT = frozenset({"agent/fleet", "agent/sec", "needs/decision", "needs/laptop"})
 
 
 def policy(**kw) -> Policy:
@@ -166,8 +166,8 @@ def test_label_outside_the_contract_is_stripped():
 
 
 def test_a_contract_label_a_human_added_is_left_alone():
-    """`needs:choco` is a deliberate human signal, not drift."""
-    issue = managed_issue(labels=frozenset({MANAGED, "needs:choco"}))
+    """`needs/decision` is a deliberate human signal, not drift."""
+    issue = managed_issue(labels=frozenset({MANAGED, "needs/decision"}))
     plan = reconcile(
         [finding()], [issue], store(ids={"disk:cobra": "PER-1"}), policy()
     )
