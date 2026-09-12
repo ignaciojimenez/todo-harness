@@ -42,10 +42,17 @@ printing the return value. Run it against production and nothing happens.
 ## Use
 
 ```bash
-pip install -e ".[dev]"
-pytest                      # the reconciler needs no network to be tested
-harness plan                # show what would change
-harness apply               # do it
+pip install .
+export LINEAR_API_KEY=...          # scope it Read+Write on one team, never Admin
+harness plan                       # show what would change
+harness apply                      # do it
+```
+
+For development, run from the source tree rather than installing editable —
+`pytest` picks up `src/` from `pyproject.toml`, and the CLI runs as:
+
+```bash
+PYTHONPATH=src python -m harness.runners.cli plan
 ```
 
 ## Docs

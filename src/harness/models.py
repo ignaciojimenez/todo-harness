@@ -50,16 +50,37 @@ class Finding:
 
 
 @dataclass(frozen=True, slots=True)
+class IssueQuery:
+    """A tracker-agnostic question about issues.
+
+    Deliberately tiny. Every field here has an obvious meaning in Linear, GitHub
+    Issues and Jira; anything that would only make sense in one of them belongs
+    in that adapter, not in the port.
+    """
+
+    open_only: bool = True
+    label: str | None = None
+    without_project: bool | None = None
+    """None means "do not filter". True is the untriaged-intake question."""
+
+
+@dataclass(frozen=True, slots=True)
 class Issue:
     """A tracker issue as it currently exists."""
 
     id: str
+    """The tracker's own handle — whatever mutations need. Opaque."""
+
     title: str
     body: str = ""
     labels: frozenset[str] = frozenset()
     project: str | None = None
     priority: int | None = None
     closed: bool = False
+    ref: str = ""
+    """Human-facing identifier (PER-53). Display only; never a key."""
+
+    url: str = ""
 
 
 # ── Actions ──────────────────────────────────────────────────────────────────

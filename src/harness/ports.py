@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Iterable, Protocol, runtime_checkable
 
-from .models import Action, Finding, Heartbeat, Issue
+from .models import Action, Finding, Heartbeat, Issue, IssueQuery
 
 
 @runtime_checkable
@@ -27,13 +27,17 @@ class Tracker(Protocol):
 
     name: str
 
-    def list_managed(self, label: str | None = None) -> list[Issue]:
-        """Open issues this harness may act on.
+    def list_issues(self, query: IssueQuery) -> list[Issue]:
+        """Issues matching `query`.
 
-        With `label`, only issues carrying it — that is what makes the "adopt"
-        gesture work: a human removes the label and the issue silently leaves
-        the harness's reach without anything needing to be told.
+        Filtering by label is what makes the "adopt" gesture work: a human
+        removes the label and the issue silently leaves the harness's reach,
+        without anything needing to be told.
         """
+        ...
+
+    def list_projects(self) -> list[str]:
+        """Project names, or `[]` where the tracker has no such concept."""
         ...
 
     def apply(self, action: Action) -> None: ...

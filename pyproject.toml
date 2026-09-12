@@ -5,6 +5,9 @@ description = "Reconcile a task tracker against what is actually true, on a sche
 requires-python = ">=3.11"
 dependencies = []
 
+[project.scripts]
+harness = "harness.runners.cli:main"
+
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 
