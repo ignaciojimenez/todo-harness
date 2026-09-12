@@ -165,3 +165,23 @@ def test_unknown_source_fails_loudly(tmp_path):
     with pytest.raises(SystemExit, match="unknown source"):
         main(["plan", "--sources", "nope", "--state", str(tmp_path / "s.json")],
              tracker=FakeTracker([]))
+
+
+def test_a_failed_ping_never_leaks_the_url(capsys):
+    """The ping URL is a credential: holding it lets you suppress the alert.
+
+    Job logs on a public repo are public, and urllib errors quote the URL they
+    failed on — so the notifier must redact it rather than rely on the CI
+    platform's secret masking.
+    """
+    url = "https://hc.example/super-secret-uuid"
+
+    def boom(u: str) -> None:
+        raise OSError(f"failed to open {u}")
+
+    HealthchecksNotifier(url, inner=NullNotifier(), transport=boom).heartbeat(
+        Heartbeat(source="x", swept=0, opened=0, updated=0, closed=0)
+    )
+    err = capsys.readouterr().err
+    assert "super-secret-uuid" not in err
+    assert "<ping-url>" in err

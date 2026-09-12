@@ -85,8 +85,12 @@ class HealthchecksNotifier:
         try:
             self.transport(self.ping_url.rstrip("/") + suffix)
         except (urllib.error.URLError, OSError) as e:
-            # Loud, but not fatal. See the class docstring.
-            print(f"heartbeat ping failed ({e}) — the missing ping is the alert",
+            # Loud, but not fatal — see the class docstring. The URL is redacted
+            # because it is a credential: anyone holding it can send a fake ping
+            # and suppress the alert. Job logs on a public repo are public, and
+            # urllib errors often quote the URL they failed on.
+            detail = str(e).replace(self.ping_url, "<ping-url>")
+            print(f"heartbeat ping failed ({detail}) — the missing ping is the alert",
                   file=sys.stderr)
 
 
