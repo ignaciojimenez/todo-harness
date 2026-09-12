@@ -135,6 +135,17 @@ def main(
         notes: list[str] = []
         for name in names:
             source = SOURCES[name](args)
+            if (
+                args.mode == "apply"
+                and getattr(source, "needs_store", False)
+                and store.was_created
+            ):
+                raise SystemExit(
+                    f"source {name!r} needs durable state and none was found at "
+                    f"{args.state!r}. Starting from an empty key map would re-open "
+                    "every issue it has ever opened. Point --state at storage that "
+                    "survives between runs, or run `plan` instead."
+                )
             produced = list(source.plan(tracker))
             actions.extend(produced)
             rep = getattr(source, "report", None)

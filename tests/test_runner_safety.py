@@ -185,3 +185,42 @@ def test_a_failed_ping_never_leaks_the_url(capsys):
     err = capsys.readouterr().err
     assert "super-secret-uuid" not in err
     assert "<ping-url>" in err
+
+
+def test_apply_refuses_a_finding_source_with_no_durable_state(tmp_path, monkeypatch):
+    """An empty key→id map means "nothing is open", so everything re-opens.
+
+    On an ephemeral CI runner that is one duplicate set per scheduled run, and
+    it would look like the sweep working.
+    """
+    import harness.runners.cli as cli
+
+    class NeedsState:
+        name = "needsy"
+        needs_store = True
+        report = None
+
+        def plan(self, tracker):
+            return []
+
+    monkeypatch.setitem(cli.SOURCES, "needsy", lambda a: NeedsState())
+    with pytest.raises(SystemExit, match="needs durable state"):
+        main(["apply", "--sources", "needsy", "--state", str(tmp_path / "absent.json")],
+             tracker=FakeTracker([]))
+
+
+def test_plan_is_allowed_without_durable_state(tmp_path, monkeypatch):
+    """Planning writes nothing, so a cold store cannot cause duplicates."""
+    import harness.runners.cli as cli
+
+    class NeedsState:
+        name = "needsy"
+        needs_store = True
+        report = None
+
+        def plan(self, tracker):
+            return []
+
+    monkeypatch.setitem(cli.SOURCES, "needsy", lambda a: NeedsState())
+    assert main(["plan", "--sources", "needsy", "--state", str(tmp_path / "absent.json")],
+                tracker=FakeTracker([])) == 0

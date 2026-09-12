@@ -23,6 +23,11 @@ class JsonStore:
 
     def __init__(self, path: str | Path = "state.json") -> None:
         self.path = Path(path)
+        self.was_created = not self.path.exists()
+        """True when no prior state was found. A finding source starting from a
+        blank map will re-open everything it has ever opened, so the runner
+        refuses rather than letting that happen quietly."""
+
         self._data: dict[str, dict] = {"issue_ids": {}, "streaks": {}}
         if self.path.exists():
             self._data.update(json.loads(self.path.read_text() or "{}"))

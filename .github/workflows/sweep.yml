@@ -1,0 +1,87 @@
+name: sweep
+
+# Three jobs, deliberately separated by what they are allowed to do:
+#
+#   test    no secrets, runs on every push and PR — including forks
+#   plan    secrets, read-only against the tracker, proves the real path works
+#   apply   secrets, writes, and only on a schedule or a deliberate dispatch
+#
+# The split matters because a PR from a fork must never see the Linear key, and
+# because `plan` failing is how a broken sweep is caught before it can act.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Four times a day, deliberately not on the hour: GitHub's own docs name
+    # "the start of every hour" as a high-load period where scheduled events
+    # are delayed.
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Apply the plan instead of only printing it"
+        type: boolean
+        default: false
+
+# Least privilege, stated here rather than inherited: the repo default can be
+# changed by someone else later, this cannot be changed by accident.
+permissions:
+  contents: read
+
+# Never let two runs write at once. Queued rather than cancelled, because a
+# cancelled apply could leave the tracker half-reconciled.
+concurrency:
+  group: sweep-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - run: pip install ".[dev]"
+      - run: pytest -q
+
+  plan:
+    # Forks do not get the key, and pull_request from a fork must not try.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - run: pip install .
+      - name: plan
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+        run: harness plan --state "${RUNNER_TEMP}/state.json"
+
+  apply:
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.apply)
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - run: pip install .
+      - name: apply
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          # Absence of this ping is the alert. A run that dies before reaching
+          # the harness — a failed checkout, a bad install, the workflow being
+          # auto-disabled after 60 days of repo inactivity — sends nothing at
+          # all, which is exactly the case a self-report can never cover.
+          HARNESS_PING_URL: ${{ secrets.HARNESS_PING_URL }}
+        run: harness apply --state "${RUNNER_TEMP}/state.json"

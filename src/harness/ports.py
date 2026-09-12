@@ -59,6 +59,14 @@ class Source(Protocol):
 
     name: str
 
+    needs_store: bool
+    """True if correctness depends on state surviving between runs.
+
+    Finding sources do: without the key→id map they cannot tell "new" from
+    "already open" and will duplicate everything. Rule sources like the triage
+    normaliser derive everything from the tracker and do not.
+    """
+
     def plan(self, tracker: Tracker) -> Iterable[Action]: ...
 
 

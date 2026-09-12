@@ -53,6 +53,10 @@ class TriageSource:
     the author's, and silently rewriting someone's words is not normalisation."""
 
     name: str = "triage"
+    needs_store: bool = False
+    """Everything is derived from the tracker each run, so an empty store is
+    harmless here — unlike a finding source."""
+
     report: TriageReport = field(default_factory=TriageReport)
 
     def plan(self, tracker: Tracker) -> Iterable[Action]:
