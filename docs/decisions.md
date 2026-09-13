@@ -2,6 +2,14 @@
 
 One-liner record of architecture/strategy calls. Newest first.
 
+## 2026-09-13
+
+- **The store is gone; the tracker is the only registry.** Identity and absence lived in a local JSON file, which meant two places held the truth about one issue and the copy that mattered could not travel. Ignacio's objection was the right one — *"a repo is generally the tool, not the memory"*. A finding's identity is now its URL, recorded as a Linear attachment on the issue; absence is a timestamp in that attachment's `metadata`. Verified before committing to it: Linear deduplicates attachments by URL natively (creating the same URL twice returns the *same* attachment id), `attachmentsForURL` resolves URL→issue with no local map, and `metadata` round-trips. Export the tracker and the harness's memory comes with it.
+- **A finding's key must be an absolute http(s) URL.** Linear rejects other schemes, which turned out to be a better constraint than a free-form string: for a Dependabot finding the key *is* the alert URL, so the marker is a link a human can follow to the evidence rather than an opaque token. Sources without a natural URL synthesise one under a namespace they own.
+- **Closing is time-based, not sweep-count-based.** The counter became "absent since <timestamp>", so ten sweeps in an hour close nothing. GitHub delays scheduled runs under load, so counting sweeps would have made the close threshold depend on the weather.
+- **`MarkAbsent` and `MarkPresent` are explicit actions.** They could have been a side effect of reconciling, but making them actions means they appear in a plan and can be reviewed, and the gap between marking and closing is exactly the thing that stops a flapping fault churning the queue.
+- **A close writes its reason as a comment on the issue.** The run log was a private file nobody would find. The reason now lands where someone would look for it — a close that happens silently is the kind people stop trusting.
+
 ## 2026-09-12 (the label contract)
 
 - **Three label groups, and native estimates for size.** `agent` (who may close), `needs` (what blocks it *now*), `kind` (what sort of work). Groups are mutually exclusive in Linear, which is the point — an issue has one current blocker and one kind. Size is **not** a label: `effort` is a reserved name in Linear because estimates are a first-class field, so t-shirt estimates were enabled instead. Sortable and filterable without spending labels.

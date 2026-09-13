@@ -13,7 +13,24 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
-from ..models import Action, Close, Comment, Issue, IssueQuery, Open, Update
+from datetime import datetime
+
+from ..models import (
+    Action,
+    Close,
+    Comment,
+    Issue,
+    IssueQuery,
+    MarkAbsent,
+    MarkPresent,
+    Open,
+    Update,
+)
+
+MARKER_SUBTITLE = "harness identity"
+"""Attachments carrying this subtitle are the harness's markers. Linear
+deduplicates attachments by URL, so the finding's URL *is* its identity and no
+separate registry is needed."""
 
 ENDPOINT = "https://api.linear.app/graphql"
 
@@ -22,6 +39,7 @@ _ISSUE_FIELDS = """
   state { type }
   project { name }
   labels { nodes { name parent { name } } }
+  attachments { nodes { id url subtitle metadata } }
 """
 
 
@@ -182,16 +200,16 @@ class LinearTracker:
             case Close():
                 if self._done_state is None:
                     self._load_team()
+                # The reason goes where someone would look for it. A close that
+                # happens silently is the kind people stop trusting.
+                self._comment(action.issue_id, f"Closed by the harness — {action.why}.")
                 self._mutate(action.issue_id, {"stateId": self._done_state})
+            case MarkAbsent():
+                self._mark(action.issue_id, action.since)
+            case MarkPresent():
+                self._mark(action.issue_id, None)
             case Comment():
-                self._gql(
-                    """
-                    mutation($id: String!, $body: String!) {
-                      commentCreate(input: { issueId: $id, body: $body }) { success }
-                    }
-                    """,
-                    {"id": action.issue_id, "body": action.body},
-                )
+                self._comment(action.issue_id, action.body)
             case _:  # pragma: no cover - exhaustive
                 raise LinearError(f"unsupported action {type(action).__name__}")
 
@@ -210,14 +228,17 @@ class LinearTracker:
             payload["projectId"] = self._project_id(f.project)
         if f.priority is not None:
             payload["priority"] = f.priority
-        self._gql(
+        created = self._gql(
             """
             mutation($input: IssueCreateInput!) {
-              issueCreate(input: $input) { success issue { identifier } }
+              issueCreate(input: $input) { success issue { id identifier } }
             }
             """,
             {"input": payload},
-        )
+        )["issueCreate"]["issue"]
+        # Identity is planted immediately. An issue opened without its marker
+        # would be invisible to the next sweep and opened again.
+        self._attach(created["id"], f.key, {})
 
     def _update(self, action: Update) -> None:
         payload: dict = {}
@@ -245,6 +266,65 @@ class LinearTracker:
         names -= set(action.remove_labels)
         return [self._label_id(n) for n in sorted(names)]
 
+    def _comment(self, issue_id: str, body: str) -> None:
+        self._gql(
+            """
+            mutation($id: String!, $body: String!) {
+              commentCreate(input: { issueId: $id, body: $body }) { success }
+            }
+            """,
+            {"id": issue_id, "body": body},
+        )
+
+    def _marker(self, issue_id: str) -> tuple[str, str] | None:
+        """(attachment id, url) of this issue's harness marker, if it has one."""
+        nodes = self._gql(
+            """
+            query($id: String!) {
+              issue(id: $id) { attachments { nodes { id url subtitle } } }
+            }
+            """,
+            {"id": issue_id},
+        )["issue"]["attachments"]["nodes"]
+        for n in nodes:
+            if n.get("subtitle") == MARKER_SUBTITLE:
+                return n["id"], n["url"]
+        return None
+
+    def _mark(self, issue_id: str, since: datetime | None) -> None:
+        """Set or clear the absence timestamp on the issue's marker.
+
+        Written only on transition, so an issue's history is not churned by a
+        sweep that found nothing new.
+        """
+        found = self._marker(issue_id)
+        if not found:
+            raise LinearError(
+                f"issue {issue_id} has no harness marker; refusing to guess at "
+                "its identity"
+            )
+        _, url = found
+        meta = {"absent_since": since.isoformat()} if since else {}
+        self._attach(issue_id, url, meta)
+
+    def _attach(self, issue_id: str, url: str, metadata: dict) -> None:
+        self._gql(
+            """
+            mutation($i: AttachmentCreateInput!) {
+              attachmentCreate(input: $i) { success }
+            }
+            """,
+            {
+                "i": {
+                    "issueId": issue_id,
+                    "url": url,
+                    "title": "finding",
+                    "subtitle": MARKER_SUBTITLE,
+                    "metadata": metadata,
+                }
+            },
+        )
+
     def _mutate(self, issue_id: str, payload: dict) -> None:
         self._gql(
             """
@@ -268,7 +348,17 @@ def _label_path(node: dict) -> str:
     return f"{parent}/{node['name']}" if parent else node["name"]
 
 
+def _marker_of(n: dict) -> tuple[str | None, datetime | None]:
+    for a in (n.get("attachments") or {}).get("nodes", []):
+        if a.get("subtitle") != MARKER_SUBTITLE:
+            continue
+        raw = (a.get("metadata") or {}).get("absent_since")
+        return a.get("url"), (datetime.fromisoformat(raw) if raw else None)
+    return None, None
+
+
 def _to_issue(n: dict) -> Issue:
+    key, absent = _marker_of(n)
     return Issue(
         id=n["id"],
         ref=n.get("identifier", ""),
@@ -279,4 +369,6 @@ def _to_issue(n: dict) -> Issue:
         priority=n.get("priority"),
         closed=(n.get("state") or {}).get("type") in {"completed", "canceled"},
         url=n.get("url") or "",
+        key=key,
+        absent_since=absent,
     )

@@ -1,34 +1,50 @@
-"""The stateful core, kept pure.
+"""The stateful core, kept pure — and with nowhere of its own to keep state.
 
-`reconcile()` takes what a source found, what the tracker holds, and what the
-store remembers, and returns the actions that would make them agree. It performs
-no IO, so it is fully testable without a network, and `--plan` is simply "print
-the return value instead of applying it".
+`reconcile()` takes what a source found, what the tracker holds, and the current
+time, and returns the actions that would make them agree. No IO, no clock of its
+own, no store. It is fully testable without a network, and `--plan` is simply
+"print the return value instead of applying it".
 
-The rules it encodes, and why each exists:
+**There is deliberately no second registry.** An earlier version kept a
+key→issue map and absence counters in a local file, which meant the truth about
+an issue lived in two places and the copy that mattered could not travel. Both
+now live on the issue itself: identity as a tracker-side marker carrying the
+finding's URL, and absence as a timestamp beside it. Export the tracker and the
+harness's memory comes with it.
 
-* **Absence closes, but slowly.** A finding that stops being emitted is no
-  longer true, which is the whole reason sources are state-shaped. But one
-  clear sweep is not evidence — a flapping fault would open and close an issue
-  forever — so a close needs `close_after_clear_sweeps` consecutive clear
-  sweeps.
-* **Reappearance resets.** Any sighting zeroes the streak. Otherwise a finding
-  that blinks out near the threshold closes on its next absence regardless of
-  how long it has been back.
-* **We only touch what we own.** An issue whose managed label a human removed
-  is theirs now. The harness stops proposing anything for it and forgets its
-  key — that is the "adopt" gesture, and it must work without anyone telling
-  the harness it happened.
-* **Silent findings are not issues.** A queue is for actions. Findings routed
-  `SILENT` are recorded by the source for audit and never reach the tracker.
+The rules, and why each exists:
+
+* **Absence closes, but only after a while.** A finding that stops being emitted
+  is no longer true, which is why sources must be state-shaped. But a fault that
+  flaps would open and close an issue forever, so a close needs the finding to
+  have been gone for `close_after` — measured in *time*, not sweeps, so an
+  irregular schedule cannot shorten it.
+* **Reappearance clears the mark.** Any sighting resets absence, or a finding
+  blinking out near the threshold would close on its next absence regardless of
+  how long it had been back.
+* **We only touch what we own.** An issue whose managed label a human removed is
+  theirs. The harness proposes nothing for it — that is the "adopt" gesture, and
+  it must work without anyone telling the harness it happened.
+* **Silent findings are not issues.** A queue is for actions.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Iterable, Sequence
 
-from .models import Action, Close, Finding, Issue, Lane, Open, Update
+from .models import (
+    Action,
+    Close,
+    Finding,
+    Issue,
+    Lane,
+    MarkAbsent,
+    MarkPresent,
+    Open,
+    Update,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,107 +52,77 @@ class Policy:
     managed_label: str
     """Carried by every issue this source opens. Its removal is the adopt gesture."""
 
-    close_after_clear_sweeps: int = 3
-    """Consecutive absences before closing. Never 1."""
+    close_after: timedelta = timedelta(hours=24)
+    """How long a finding must be gone before its issue closes. Never zero."""
 
     allowed_labels: frozenset[str] = frozenset()
-    """Labels the tracker's contract permits. Anything else on a managed issue
-    is stripped. Empty means "do not police labels"."""
+    """Labels the tracker's contract permits. Anything else on a managed issue is
+    stripped. Empty means "do not police labels"."""
 
     def __post_init__(self) -> None:
-        if self.close_after_clear_sweeps < 2:
+        if self.close_after <= timedelta(0):
             raise ValueError(
-                "close_after_clear_sweeps must be >= 2: closing on a single "
-                "clear sweep lets a flapping fault churn the queue"
+                "close_after must be positive: closing the moment a finding "
+                "first goes missing lets a flapping fault churn the queue"
             )
-
-
-class StreakReader:
-    """The slice of `Store` that `reconcile` needs, so tests can pass a dict."""
-
-    def __init__(self, issue_ids: dict[str, str], streaks: dict[str, int]) -> None:
-        self.issue_ids = issue_ids
-        self.streaks = streaks
-
-    def issue_id_for(self, key: str) -> str | None:
-        return self.issue_ids.get(key)
-
-    def clear_streak(self, key: str) -> int:
-        return self.streaks.get(key, 0)
 
 
 @dataclass(frozen=True, slots=True)
 class Plan:
     actions: tuple[Action, ...]
-    seen_keys: frozenset[str]
-    """Keys present this sweep — the runner resets their streaks after applying."""
-
-    absent_keys: frozenset[str]
-    """Managed keys not seen — the runner bumps their streaks after applying."""
-
-    dropped_keys: frozenset[str]
-    """Keys the harness no longer owns (label removed). Forget them."""
+    adopted: tuple[str, ...] = ()
+    """Issues a human has taken. Reported, never acted on."""
 
 
 def reconcile(
     findings: Iterable[Finding],
     managed: Sequence[Issue],
-    store: StreakReader,
     policy: Policy,
+    now: datetime,
 ) -> Plan:
-    """Return the actions that reconcile `findings` against `managed`."""
-    actionable = [f for f in findings if f.lane is not Lane.SILENT]
-    by_key = {f.key: f for f in actionable}
+    """Return the actions that reconcile `findings` against `managed`.
 
-    by_id = {i.id: i for i in managed}
-    owned_ids = {i.id for i in managed if policy.managed_label in i.labels}
+    `managed` is every open issue carrying the policy's label, each already
+    carrying the key and absence mark the tracker read back for it.
+    """
+    actionable = {f.key: f for f in findings if f.lane is not Lane.SILENT}
+
+    ours = [i for i in managed if policy.managed_label in i.labels]
+    adopted = [i.ref or i.id for i in managed if policy.managed_label not in i.labels]
+    by_key = {i.key: i for i in ours if i.key}
 
     actions: list[Action] = []
-    dropped: set[str] = set()
 
-    # Keys whose issue we no longer own: a human adopted it. Stop touching it.
-    for key in list(store.issue_ids):
-        issue_id = store.issue_id_for(key)
-        if issue_id and issue_id in by_id and issue_id not in owned_ids:
-            dropped.add(key)
-
-    for key, finding in by_key.items():
-        if key in dropped:
-            continue
-        issue_id = store.issue_id_for(key)
-        issue = by_id.get(issue_id) if issue_id else None
-
+    for key, finding in actionable.items():
+        issue = by_key.get(key)
         if issue is None or issue.closed:
             actions.append(Open(finding, why="newly true, no open issue"))
             continue
-
+        if issue.absent_since is not None:
+            actions.append(
+                MarkPresent(issue.id, why="seen again; absence mark cleared")
+            )
         if (diff := _drift(issue, finding, policy)) is not None:
             actions.append(diff)
 
-    # Absent: owned issues whose finding was not emitted this sweep.
-    absent: set[str] = set()
-    for key in list(store.issue_ids):
-        if key in by_key or key in dropped:
+    for key, issue in by_key.items():
+        if key in actionable or issue.closed:
             continue
-        issue_id = store.issue_id_for(key)
-        if not issue_id or issue_id not in owned_ids:
+        if issue.absent_since is None:
+            actions.append(MarkAbsent(issue.id, since=now, why="no longer reported"))
             continue
-        issue = by_id[issue_id]
-        if issue.closed:
-            continue
-        absent.add(key)
-        streak = store.clear_streak(key) + 1
-        if streak >= policy.close_after_clear_sweeps:
+        gone = now - issue.absent_since
+        if gone >= policy.close_after:
             actions.append(
-                Close(issue_id, why=f"absent for {streak} consecutive sweeps")
+                Close(issue.id, why=f"absent for {_human(gone)}, no longer true")
             )
 
-    return Plan(
-        actions=tuple(actions),
-        seen_keys=frozenset(by_key) - dropped,
-        absent_keys=frozenset(absent),
-        dropped_keys=frozenset(dropped),
-    )
+    return Plan(actions=tuple(actions), adopted=tuple(adopted))
+
+
+def _human(d: timedelta) -> str:
+    h = d.total_seconds() / 3600
+    return f"{h:.0f}h" if h < 48 else f"{h / 24:.0f}d"
 
 
 def _drift(issue: Issue, finding: Finding, policy: Policy) -> Update | None:
@@ -161,8 +147,8 @@ def _drift(issue: Issue, finding: Finding, policy: Policy) -> Update | None:
     want = finding.labels | {policy.managed_label}
     add = want - issue.labels
     # Strip only labels outside the tracker's contract. A contract label a human
-    # added deliberately (`needs:choco`) is left alone — this normalises, it does
-    # not tidy. With no contract configured it touches nothing.
+    # added deliberately (`needs/decision`) is left alone — this normalises, it
+    # does not tidy. With no contract configured it touches nothing.
     remove = issue.labels - policy.allowed_labels if policy.allowed_labels else frozenset()
     if add:
         reasons.append("labels+")

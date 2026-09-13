@@ -3,17 +3,24 @@
 A test that only checks the happy path would pass against a reconciler that
 does nothing at all — which is the same failure as an alert that never fires.
 So each case here forces the condition it cares about.
+
+Note there is no store to set up. Identity and absence live on the issue, so a
+test case is just "these findings, these issues, this clock".
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
-from harness.models import Close, Finding, Issue, Lane, Open, Update
-from harness.reconcile import Policy, StreakReader, reconcile
+from harness.models import Close, Finding, Issue, Lane, MarkAbsent, MarkPresent, Open, Update
+from harness.reconcile import Policy, reconcile
 
 MANAGED = "agent/fleet"
 CONTRACT = frozenset({"agent/fleet", "agent/sec", "needs/decision", "needs/laptop"})
+KEY = "https://github.com/ignaciojimenez/x/security/dependabot/7"
+NOW = datetime(2026, 9, 13, 12, 0, tzinfo=timezone.utc)
 
 
 def policy(**kw) -> Policy:
@@ -22,92 +29,95 @@ def policy(**kw) -> Policy:
     return Policy(**kw)
 
 
-def store(ids=None, streaks=None) -> StreakReader:
-    return StreakReader(dict(ids or {}), dict(streaks or {}))
-
-
-def finding(key="disk:cobra", **kw) -> Finding:
+def finding(**kw) -> Finding:
+    kw.setdefault("key", KEY)
     kw.setdefault("title", "cobra root filesystem at 91%")
-    return Finding(key=key, **kw)
+    return Finding(**kw)
 
 
-def managed_issue(id="PER-1", labels=frozenset({MANAGED}), **kw) -> Issue:
+def issue(id="i1", labels=frozenset({MANAGED}), **kw) -> Issue:
+    kw.setdefault("key", KEY)
     kw.setdefault("title", "cobra root filesystem at 91%")
     return Issue(id=id, labels=labels, **kw)
+
+
+def kinds(plan):
+    return [type(a) for a in plan.actions]
 
 
 # ── opening ──────────────────────────────────────────────────────────────────
 
 
 def test_new_finding_opens_an_issue():
-    plan = reconcile([finding()], [], store(), policy())
-    assert [type(a) for a in plan.actions] == [Open]
+    assert kinds(reconcile([finding()], [], policy(), NOW)) == [Open]
 
 
 def test_known_finding_with_matching_issue_does_nothing():
     """Idempotence. Running the sweep twice must not open a second issue."""
-    plan = reconcile(
-        [finding()],
-        [managed_issue()],
-        store(ids={"disk:cobra": "PER-1"}),
-        policy(),
-    )
-    assert plan.actions == ()
+    assert reconcile([finding()], [issue()], policy(), NOW).actions == ()
+
+
+def test_identity_comes_from_the_issue_not_a_local_map():
+    """An issue whose marker does not match is a different finding, not this one.
+
+    So the new finding gets its own issue, and the unmatched one is treated as
+    having gone absent — which is exactly right, and is the behaviour a local
+    key map would have had to be kept in sync to reproduce.
+    """
+    other = issue(key="https://github.com/ignaciojimenez/x/security/dependabot/99")
+    plan = reconcile([finding()], [other], policy(), NOW)
+    assert sorted(t.__name__ for t in kinds(plan)) == ["MarkAbsent", "Open"]
 
 
 def test_closed_issue_for_a_still_true_finding_reopens():
     """The condition is true again; a closed issue is not a record of that."""
-    plan = reconcile(
-        [finding()],
-        [managed_issue(closed=True)],
-        store(ids={"disk:cobra": "PER-1"}),
-        policy(),
-    )
-    assert [type(a) for a in plan.actions] == [Open]
+    assert kinds(reconcile([finding()], [issue(closed=True)], policy(), NOW)) == [Open]
 
 
-# ── closing, slowly ──────────────────────────────────────────────────────────
+# ── closing, slowly, and on a clock ──────────────────────────────────────────
 
 
-def test_one_clear_sweep_does_not_close():
+def test_first_absence_marks_but_does_not_close():
     """The rule that stops a flapping fault churning the queue."""
-    plan = reconcile(
-        [],
-        [managed_issue()],
-        store(ids={"disk:cobra": "PER-1"}, streaks={"disk:cobra": 0}),
-        policy(close_after_clear_sweeps=3),
-    )
-    assert plan.actions == ()
-    assert plan.absent_keys == frozenset({"disk:cobra"})
+    plan = reconcile([], [issue()], policy(close_after=timedelta(hours=24)), NOW)
+    assert kinds(plan) == [MarkAbsent]
+    assert plan.actions[0].since == NOW
 
 
-def test_closes_on_the_nth_consecutive_clear_sweep():
-    plan = reconcile(
-        [],
-        [managed_issue()],
-        store(ids={"disk:cobra": "PER-1"}, streaks={"disk:cobra": 2}),
-        policy(close_after_clear_sweeps=3),
-    )
-    assert [type(a) for a in plan.actions] == [Close]
-    assert "3 consecutive" in plan.actions[0].why
+def test_still_absent_but_not_long_enough_does_nothing():
+    gone = issue(absent_since=NOW - timedelta(hours=5))
+    assert reconcile([], [gone], policy(close_after=timedelta(hours=24)), NOW).actions == ()
 
 
-def test_reappearance_clears_the_streak():
+def test_closes_once_it_has_been_absent_long_enough():
+    gone = issue(absent_since=NOW - timedelta(hours=30))
+    plan = reconcile([], [gone], policy(close_after=timedelta(hours=24)), NOW)
+    assert kinds(plan) == [Close]
+    assert "30h" in plan.actions[0].why
+
+
+def test_reappearance_clears_the_absence_mark():
     """A finding that blinks back must not close on its next single absence."""
-    plan = reconcile(
-        [finding()],
-        [managed_issue()],
-        store(ids={"disk:cobra": "PER-1"}, streaks={"disk:cobra": 2}),
-        policy(close_after_clear_sweeps=3),
-    )
-    assert not any(isinstance(a, Close) for a in plan.actions)
-    assert plan.seen_keys == frozenset({"disk:cobra"})
-    assert plan.absent_keys == frozenset()
+    gone = issue(absent_since=NOW - timedelta(hours=23))
+    plan = reconcile([finding()], [gone], policy(), NOW)
+    assert kinds(plan) == [MarkPresent]
 
 
-def test_policy_refuses_to_close_on_a_single_sweep():
+def test_an_irregular_schedule_cannot_shorten_the_wait():
+    """Time-based, not sweep-count-based. Ten sweeps in an hour still close nothing.
+
+    GitHub delays scheduled runs under load, so sweeps are not evenly spaced;
+    counting them would make the close threshold depend on the weather.
+    """
+    gone = issue(absent_since=NOW - timedelta(hours=1))
+    for _ in range(10):
+        plan = reconcile([], [gone], policy(close_after=timedelta(hours=24)), NOW)
+        assert plan.actions == ()
+
+
+def test_policy_refuses_a_zero_wait():
     with pytest.raises(ValueError, match="flapping"):
-        Policy(managed_label=MANAGED, close_after_clear_sweeps=1)
+        Policy(managed_label=MANAGED, close_after=timedelta(0))
 
 
 # ── ownership: the adopt gesture ─────────────────────────────────────────────
@@ -115,25 +125,15 @@ def test_policy_refuses_to_close_on_a_single_sweep():
 
 def test_removing_the_managed_label_stops_all_action():
     """A human took it. The harness must go quiet without being told."""
-    adopted = managed_issue(labels=frozenset())
-    plan = reconcile(
-        [finding()],
-        [adopted],
-        store(ids={"disk:cobra": "PER-1"}),
-        policy(),
-    )
-    assert plan.actions == ()
-    assert plan.dropped_keys == frozenset({"disk:cobra"})
+    adopted = issue(labels=frozenset(), ref="PER-9")
+    plan = reconcile([finding()], [adopted], policy(), NOW)
+    assert kinds(plan) == [Open], "the finding is real, so it still needs an issue"
+    assert plan.adopted == ("PER-9",)
 
 
-def test_adopted_issue_is_never_closed_even_when_the_finding_clears():
-    adopted = managed_issue(labels=frozenset())
-    plan = reconcile(
-        [],
-        [adopted],
-        store(ids={"disk:cobra": "PER-1"}, streaks={"disk:cobra": 99}),
-        policy(close_after_clear_sweeps=3),
-    )
+def test_adopted_issue_is_never_closed_even_when_long_absent():
+    adopted = issue(labels=frozenset(), absent_since=NOW - timedelta(days=99))
+    plan = reconcile([], [adopted], policy(), NOW)
     assert plan.actions == ()
 
 
@@ -142,53 +142,38 @@ def test_adopted_issue_is_never_closed_even_when_the_finding_clears():
 
 def test_silent_findings_never_reach_the_tracker():
     """A queue is for actions, not findings."""
-    plan = reconcile([finding(lane=Lane.SILENT)], [], store(), policy())
-    assert plan.actions == ()
+    assert reconcile([finding(lane=Lane.SILENT)], [], policy(), NOW).actions == ()
 
 
 def test_page_findings_still_get_an_issue():
     """Paging is the notifier's job; it does not exempt the work from tracking."""
-    plan = reconcile([finding(lane=Lane.PAGE)], [], store(), policy())
-    assert [type(a) for a in plan.actions] == [Open]
+    assert kinds(reconcile([finding(lane=Lane.PAGE)], [], policy(), NOW)) == [Open]
 
 
 # ── drift ────────────────────────────────────────────────────────────────────
 
 
 def test_label_outside_the_contract_is_stripped():
-    """`Improvement` is a tracker default nobody adopted. PER-53 arrived with it."""
-    issue = managed_issue(labels=frozenset({MANAGED, "Improvement"}))
-    plan = reconcile(
-        [finding()], [issue], store(ids={"disk:cobra": "PER-1"}), policy()
-    )
-    assert [type(a) for a in plan.actions] == [Update]
+    i = issue(labels=frozenset({MANAGED, "Improvement"}))
+    plan = reconcile([finding()], [i], policy(), NOW)
+    assert kinds(plan) == [Update]
     assert plan.actions[0].remove_labels == frozenset({"Improvement"})
 
 
 def test_a_contract_label_a_human_added_is_left_alone():
     """`needs/decision` is a deliberate human signal, not drift."""
-    issue = managed_issue(labels=frozenset({MANAGED, "needs/decision"}))
-    plan = reconcile(
-        [finding()], [issue], store(ids={"disk:cobra": "PER-1"}), policy()
-    )
-    assert plan.actions == ()
+    i = issue(labels=frozenset({MANAGED, "needs/decision"}))
+    assert reconcile([finding()], [i], policy(), NOW).actions == ()
 
 
 def test_no_contract_configured_means_no_label_policing():
-    issue = managed_issue(labels=frozenset({MANAGED, "whatever"}))
-    plan = reconcile(
-        [finding()],
-        [issue],
-        store(ids={"disk:cobra": "PER-1"}),
-        policy(allowed_labels=frozenset()),
-    )
+    i = issue(labels=frozenset({MANAGED, "whatever"}))
+    plan = reconcile([finding()], [i], policy(allowed_labels=frozenset()), NOW)
     assert plan.actions == ()
 
 
 def test_changed_title_is_an_update_not_a_new_issue():
-    issue = managed_issue(title="cobra root filesystem at 80%")
-    plan = reconcile(
-        [finding()], [issue], store(ids={"disk:cobra": "PER-1"}), policy()
-    )
-    assert [type(a) for a in plan.actions] == [Update]
+    i = issue(title="cobra root filesystem at 80%")
+    plan = reconcile([finding()], [i], policy(), NOW)
+    assert kinds(plan) == [Update]
     assert plan.actions[0].title == "cobra root filesystem at 91%"

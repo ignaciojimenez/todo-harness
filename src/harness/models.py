@@ -8,6 +8,7 @@ what makes `--plan` a property of the design rather than a feature bolted on.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from typing import Mapping
 
@@ -36,9 +37,17 @@ class Finding:
     """
 
     key: str
-    """Stable identity across sweeps. The dedup key, and the thing the store
-    maps to a tracker id. Must not embed anything that changes while the
-    finding persists (timestamps, counts, severity)."""
+    """Stable identity across sweeps, and **an absolute http(s) URL**.
+
+    It is recorded on the tracker side as the finding's marker, which is what
+    lets the harness keep no registry of its own. Making it a real URL rather
+    than an invented string is the difference between a marker a human can click
+    through to the evidence — a Dependabot alert, a CI run — and an opaque token
+    that only the harness understands.
+
+    Must not embed anything that changes while the finding persists: no
+    timestamps, counts or severities, or the same condition reads as new.
+    """
 
     title: str
     body: str = ""
@@ -77,6 +86,15 @@ class Issue:
     project: str | None = None
     priority: int | None = None
     closed: bool = False
+
+    key: str | None = None
+    """The finding marker the tracker holds for this issue, if any."""
+
+    absent_since: datetime | None = None
+    """When its finding was last observed to have stopped being true. `None`
+    means currently reported. This replaces a locally-held counter, so the
+    tracker carries the whole truth about the issue."""
+
     ref: str = ""
     """Human-facing identifier (PER-53). Display only; never a key."""
 
@@ -107,6 +125,28 @@ class Update:
 
 
 @dataclass(frozen=True, slots=True)
+class MarkAbsent:
+    """Record that a finding stopped being reported, starting the clock.
+
+    Separate from `Close` on purpose: the gap between them is what stops a
+    flapping fault churning the queue, and making it an explicit action means it
+    shows up in a plan rather than happening invisibly.
+    """
+
+    issue_id: str
+    since: datetime
+    why: str
+
+
+@dataclass(frozen=True, slots=True)
+class MarkPresent:
+    """Clear an absence mark because the finding is true again."""
+
+    issue_id: str
+    why: str
+
+
+@dataclass(frozen=True, slots=True)
 class Close:
     issue_id: str
     why: str
@@ -119,7 +159,7 @@ class Comment:
     why: str
 
 
-Action = Open | Update | Close | Comment
+Action = Open | Update | Close | Comment | MarkAbsent | MarkPresent
 
 
 @dataclass(frozen=True, slots=True)

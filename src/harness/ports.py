@@ -6,12 +6,13 @@ no import from this package at all if you would rather not.
 
     Source   what to do        (triage rules, a security sweep, a fleet sweep)
     Tracker  where issues live (Linear, GitHub Issues, a JSON file)
-    Store    what was true last time (KV, SQLite, a file)
     Notifier where heartbeats and pages go (Slack, stdout, healthchecks.io)
 
-The tracker deliberately holds no state beyond the issues themselves. Counters
-and the key→id map live in the Store, on whatever box runs the sweep, so
-swapping trackers stays cheap and the tracker never becomes the system.
+**There is no Store.** An earlier design kept identity and absence counters in a
+local file; that meant two registries disagreeing about the same issue, and the
+copy that mattered could not travel. A tracker records the finding marker and
+the absence timestamp alongside the issue, so exporting the tracker exports the
+harness's memory too.
 """
 
 from __future__ import annotations
@@ -59,40 +60,7 @@ class Source(Protocol):
 
     name: str
 
-    needs_store: bool
-    """True if correctness depends on state surviving between runs.
-
-    Finding sources do: without the key→id map they cannot tell "new" from
-    "already open" and will duplicate everything. Rule sources like the triage
-    normaliser derive everything from the tracker and do not.
-    """
-
     def plan(self, tracker: Tracker) -> Iterable[Action]: ...
-
-
-@runtime_checkable
-class Store(Protocol):
-    """Small durable state. Never the tracker, never a database if a file will do.
-
-    Two jobs only: remember which tracker issue a finding key maps to, and count
-    how many consecutive sweeps a finding has been absent. The second is what
-    stops a flapping fault from churning the queue.
-    """
-
-    def issue_id_for(self, key: str) -> str | None: ...
-    def remember(self, key: str, issue_id: str) -> None: ...
-    def forget(self, key: str) -> None: ...
-
-    def clear_streak(self, key: str) -> int:
-        """Consecutive sweeps this key has been absent."""
-        ...
-
-    def bump_clear_streak(self, key: str) -> int: ...
-    def reset_clear_streak(self, key: str) -> None: ...
-
-    def record_run(self, entry: dict, keep: int = 50) -> None:
-        """Durable record of what a run did and why. See `JsonStore.record_run`."""
-        ...
 
 
 @runtime_checkable

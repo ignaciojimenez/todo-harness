@@ -11,28 +11,33 @@ declare what is true *now*, and the harness opens, updates and closes to match.
 
 ```
 Source ──findings──▶ reconcile() ──actions──▶ Tracker
-                          ▲                      │
-                        Store ◀──────────────────┘
-                     (key→id, streaks)      Notifier ◀── heartbeat
+                                                 │
+                            Notifier ◀───────────┘
+                            (heartbeat, pages)
 ```
 
-Four ports, all `Protocol`s — implement the shape, inherit nothing:
+Three ports, all `Protocol`s — implement the shape, inherit nothing:
 
 | Port | Swap it to | Ships with |
 |---|---|---|
 | `Source` | a different sweep | triage normaliser |
 | `Tracker` | GitHub Issues, Jira, a file | Linear |
-| `Store` | KV, SQLite, a file | JSON file |
 | `Notifier` | Slack, healthchecks.io | stdout |
+
+**The harness keeps no state of its own.** A finding's identity is its URL,
+recorded against the issue in the tracker — so the tracker's own deduplication
+does the work a local key map used to, and exporting your issues exports the
+harness's memory with them. Absence is a timestamp stored beside it.
 
 `reconcile()` is pure — no IO — so `--plan` is not a feature, it is just
 printing the return value. Run it against production and nothing happens.
 
 ## Rules it enforces, and why
 
-- **Absence closes, but never on one sweep.** A finding that stops being
+- **Absence closes, but only after a while.** A finding that stops being
   emitted is no longer true; a finding that flaps would otherwise churn the
-  queue forever. Closing needs N consecutive clear sweeps.
+  queue forever. Closing needs it to have been gone for `close_after` —
+  measured in *time*, so an irregular schedule cannot shorten the wait.
 - **Removing the managed label stops everything.** That is the *adopt* gesture:
   a human takes an issue and the harness goes quiet without being told.
 - **A heartbeat every run, including empty ones.** A sweep that only speaks when

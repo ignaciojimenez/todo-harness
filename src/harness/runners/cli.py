@@ -21,11 +21,19 @@ import os
 import sys
 from typing import Callable, Sequence
 
-from ..models import Action, Close, Comment, Heartbeat, Open, Update
+from ..models import (
+    Action,
+    Close,
+    Comment,
+    Heartbeat,
+    MarkAbsent,
+    MarkPresent,
+    Open,
+    Update,
+)
 from ..notifiers import HealthchecksNotifier, StdoutNotifier
 from ..ports import Source, Tracker
 from ..sources.triage import TriageSource
-from ..stores import JsonStore
 from ..trackers.linear import LinearTracker
 
 DEFAULT_CONTRACT = ",".join(
@@ -75,6 +83,10 @@ def describe(a: Action) -> str:
             return f"CLOSE  {a.issue_id}   ({a.why})"
         case Comment():
             return f"NOTE   {a.issue_id}   ({a.why})"
+        case MarkAbsent():
+            return f"ABSENT {a.issue_id}  since {a.since:%Y-%m-%d %H:%M}   ({a.why})"
+        case MarkPresent():
+            return f"BACK   {a.issue_id}   ({a.why})"
     raise AssertionError(f"unhandled action {type(a).__name__}")
 
 
@@ -103,7 +115,6 @@ def build_parser() -> argparse.ArgumentParser:
             "radius costs one comparison."
         ),
     )
-    p.add_argument("--state", default=os.environ.get("HARNESS_STATE", "state.json"))
     p.add_argument(
         "--ping-url",
         default=os.environ.get("HARNESS_PING_URL"),
@@ -137,26 +148,13 @@ def main(
             )
 
         tracker = tracker or LinearTracker(team_key=args.team)
-        store = JsonStore(args.state)
 
         actions: list[Action] = []
         swept = 0
         notes: list[str] = []
         for name in names:
             source = SOURCES[name](args)
-            if (
-                args.mode == "apply"
-                and getattr(source, "needs_store", False)
-                and store.was_created
-            ):
-                raise SystemExit(
-                    f"source {name!r} needs durable state and none was found at "
-                    f"{args.state!r}. Starting from an empty key map would re-open "
-                    "every issue it has ever opened. Point --state at storage that "
-                    "survives between runs, or run `plan` instead."
-                )
-            produced = list(source.plan(tracker))
-            actions.extend(produced)
+            actions.extend(source.plan(tracker))
             rep = getattr(source, "report", None)
             if rep is not None:
                 swept += getattr(rep, "seen", 0)
@@ -174,7 +172,7 @@ def main(
                 "check the source before raising the limit."
             )
             print(msg, file=sys.stderr)
-            _report(notifier, store, args, swept, applied=0, errors=1, note=msg)
+            _report(notifier, args, swept, applied=0, errors=1, note=msg)
             return 2
 
         applied = 0
@@ -188,7 +186,7 @@ def main(
             for n in notes:
                 print("  " + n)
 
-        _report(notifier, store, args, swept, applied, errors=0,
+        _report(notifier, args, swept, applied, errors=0,
                 actions=actions if args.mode == "apply" else None)
         return 0
     except SystemExit:
@@ -213,7 +211,7 @@ def _notes(rep, args) -> list[str]:
     return out
 
 
-def _report(notifier, store, args, swept, applied, errors, note=None, actions=None):
+def _report(notifier, args, swept, applied, errors, note=None, actions=None):
     hb = Heartbeat(
         source=args.sources,
         swept=swept,
@@ -222,22 +220,6 @@ def _report(notifier, store, args, swept, applied, errors, note=None, actions=No
         closed=sum(isinstance(a, Close) for a in (actions or ())),
         errors=errors,
     )
-    entry = {
-        "at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-        "mode": args.mode,
-        "sources": args.sources,
-        "swept": swept,
-        "applied": applied,
-        "errors": errors,
-    }
-    if note:
-        entry["note"] = note
-    if actions:
-        entry["actions"] = [
-            {"do": type(a).__name__, "target": _target(a), "why": a.why}
-            for a in actions
-        ]
-    store.record_run(entry)
     notifier.heartbeat(hb)
 
 
