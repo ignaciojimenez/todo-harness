@@ -200,6 +200,16 @@ def main(
         raise
 
 
+def _plan_notes(plan) -> list[str]:
+    """Things a reconciling source saw but would not act on."""
+    out = []
+    for ref in getattr(plan, "adopted", ()):
+        out.append(f"{ref}  adopted by a human — the harness has stopped touching it")
+    for ref in getattr(plan, "unmarked", ()):
+        out.append(f"{ref}  carries an agent label but no marker — which finding is it?")
+    return out
+
+
 def _notes(rep, args) -> list[str]:
     out = []
     for i in getattr(rep, "ambiguous_project", ()):

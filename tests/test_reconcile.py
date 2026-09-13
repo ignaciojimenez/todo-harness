@@ -177,3 +177,26 @@ def test_changed_title_is_an_update_not_a_new_issue():
     plan = reconcile([finding()], [i], policy(), NOW)
     assert kinds(plan) == [Update]
     assert plan.actions[0].title == "cobra root filesystem at 91%"
+
+
+# ── keys ─────────────────────────────────────────────────────────────────────
+
+
+def test_a_key_that_is_not_a_url_fails_at_the_source():
+    """Fail where the source can be fixed, not at write time."""
+    with pytest.raises(ValueError, match="absolute http"):
+        Finding(key="dependabot:pastebin-worker:pillow", title="x")
+
+
+def test_a_synthesised_url_is_fine_for_findings_with_no_natural_link():
+    f = Finding(key="https://harness.invalid/fleet/disk/cobra", title="disk full")
+    assert kinds(reconcile([f], [], policy(), NOW)) == [Open]
+
+
+def test_an_issue_claiming_our_label_without_a_marker_is_reported_not_skipped():
+    """A human adding agent/fleet by hand. The harness cannot know what it is,
+    but silently ignoring it is how a queue stops meaning anything."""
+    mystery = Issue(id="i9", ref="PER-77", labels=frozenset({MANAGED}), title="?")
+    plan = reconcile([], [mystery], policy(), NOW)
+    assert plan.actions == ()
+    assert plan.unmarked == ("PER-77",)

@@ -73,6 +73,12 @@ class Plan:
     adopted: tuple[str, ...] = ()
     """Issues a human has taken. Reported, never acted on."""
 
+    unmarked: tuple[str, ...] = ()
+    """Issues carrying the managed label but no marker — so the harness cannot
+    tell which finding they are. Almost always a human adding an `agent/*` label
+    by hand. Reported rather than skipped: silently ignoring an issue that claims
+    to be ours is how a queue quietly stops meaning anything."""
+
 
 def reconcile(
     findings: Iterable[Finding],
@@ -90,6 +96,7 @@ def reconcile(
     ours = [i for i in managed if policy.managed_label in i.labels]
     adopted = [i.ref or i.id for i in managed if policy.managed_label not in i.labels]
     by_key = {i.key: i for i in ours if i.key}
+    unmarked = [i.ref or i.id for i in ours if not i.key]
 
     actions: list[Action] = []
 
@@ -117,7 +124,11 @@ def reconcile(
                 Close(issue.id, why=f"absent for {_human(gone)}, no longer true")
             )
 
-    return Plan(actions=tuple(actions), adopted=tuple(adopted))
+    return Plan(
+        actions=tuple(actions),
+        adopted=tuple(adopted),
+        unmarked=tuple(unmarked),
+    )
 
 
 def _human(d: timedelta) -> str:

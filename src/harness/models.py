@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from urllib.parse import urlparse
 from enum import Enum
 from typing import Mapping
 
@@ -47,7 +48,25 @@ class Finding:
 
     Must not embed anything that changes while the finding persists: no
     timestamps, counts or severities, or the same condition reads as new.
+
+    Only findings a *source opens* need one. Issues a human captures carry no
+    marker and never will — the harness does not manage them, so it has nothing
+    to identify.
+
+    Where no natural URL exists, prefer one that still helps whoever opens the
+    issue: the runbook for the check, the doc that explains it. Fall back to a
+    reserved `.invalid` host only when there is genuinely nothing to point at.
     """
+
+    def __post_init__(self) -> None:
+        u = urlparse(self.key)
+        if u.scheme not in {"http", "https"} or not u.netloc:
+            raise ValueError(
+                f"finding key must be an absolute http(s) URL, got {self.key!r}. "
+                "The key is recorded as the marker on the tracker side, and most "
+                "trackers reject other schemes — so this fails here, where the "
+                "source can be fixed, rather than at write time."
+            )
 
     title: str
     body: str = ""
