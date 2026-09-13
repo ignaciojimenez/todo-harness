@@ -42,6 +42,10 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # checkout leaves the job token in .git/config by default. Nothing
+          # here pushes, so it has no reason to be on disk for the run.
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
@@ -56,6 +60,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # checkout leaves the job token in .git/config by default. Nothing
+          # here pushes, so it has no reason to be on disk for the run.
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
@@ -63,7 +71,7 @@ jobs:
       - name: plan
         env:
           LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
-        run: harness plan --state "${RUNNER_TEMP}/state.json"
+        run: harness plan
 
   apply:
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.apply)
@@ -72,6 +80,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # checkout leaves the job token in .git/config by default. Nothing
+          # here pushes, so it has no reason to be on disk for the run.
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
@@ -84,4 +96,4 @@ jobs:
           # auto-disabled after 60 days of repo inactivity — sends nothing at
           # all, which is exactly the case a self-report can never cover.
           HARNESS_PING_URL: ${{ secrets.HARNESS_PING_URL }}
-        run: harness apply --state "${RUNNER_TEMP}/state.json"
+        run: harness apply

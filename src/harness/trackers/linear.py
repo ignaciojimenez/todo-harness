@@ -173,7 +173,10 @@ class LinearTracker:
     def _label_id(self, name: str) -> str:
         if self._label_ids is None:
             self._load_labels()
-        assert self._label_ids is not None
+        # Not an assert: `python -O` strips those, and the next line would then
+        # fail with an unrelated TypeError instead of saying what went wrong.
+        if self._label_ids is None:  # pragma: no cover - load always populates
+            raise LinearError("label cache failed to load")
         if name not in self._label_ids:
             raise LinearError(
                 f"label {name!r} does not exist. Create it deliberately — the "
@@ -184,7 +187,8 @@ class LinearTracker:
     def _project_id(self, name: str) -> str:
         if self._project_ids is None:
             self._load_projects()
-        assert self._project_ids is not None
+        if self._project_ids is None:  # pragma: no cover - load always populates
+            raise LinearError("project cache failed to load")
         if name not in self._project_ids:
             raise LinearError(f"project {name!r} does not exist")
         return self._project_ids[name]
