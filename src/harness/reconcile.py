@@ -137,17 +137,22 @@ def _human(d: timedelta) -> str:
 
 
 def _drift(issue: Issue, finding: Finding, policy: Policy) -> Update | None:
-    """What has changed about a finding that is still true."""
+    """What has changed about a finding that is still true.
+
+    🔴 **Title and body are written once, at creation, and never corrected.**
+    They belong to whoever is working the issue after that. An issue adopted by
+    attaching a marker to it — which is how a human hands existing work to the
+    harness — would otherwise have its write-up replaced by a generated template
+    on the next sweep, every sweep. Losing someone's analysis to a scheduled job
+    is a far worse failure than a title that has gone slightly stale, and the
+    marker points at the live source anyway.
+
+    What is corrected is what the contract owns: labels, project, priority.
+    """
     reasons: list[str] = []
-    title = body = project = None
+    project = None
     priority = None
 
-    if issue.title != finding.title:
-        title = finding.title
-        reasons.append("title")
-    if finding.body and issue.body != finding.body:
-        body = finding.body
-        reasons.append("body")
     if finding.project and issue.project != finding.project:
         project = finding.project
         reasons.append("project")
@@ -171,8 +176,6 @@ def _drift(issue: Issue, finding: Finding, policy: Policy) -> Update | None:
     return Update(
         issue_id=issue.id,
         why="drift: " + ", ".join(reasons),
-        title=title,
-        body=body,
         project=project,
         priority=priority,
         add_labels=frozenset(add),

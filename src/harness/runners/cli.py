@@ -33,6 +33,7 @@ from ..models import (
 )
 from ..notifiers import HealthchecksNotifier, StdoutNotifier
 from ..ports import Source, Tracker
+from ..sources.osv import OsvSource
 from ..sources.security import SecuritySource
 from ..sources.triage import TriageSource
 from ..trackers.linear import LinearTracker
@@ -56,6 +57,13 @@ SOURCES: dict[str, Callable[[argparse.Namespace], Source]] = {
         max_body_lines=a.max_body_lines,
     ),
     "security": lambda a: SecuritySource(
+        owner=a.owner,
+        allowed_labels=frozenset(
+            x.strip() for x in a.contract.split(",") if x.strip()
+        ),
+        close_after_hours=a.close_after_hours,
+    ),
+    "osv": lambda a: OsvSource(
         owner=a.owner,
         allowed_labels=frozenset(
             x.strip() for x in a.contract.split(",") if x.strip()
@@ -166,6 +174,7 @@ def main(
 
         actions: list[Action] = []
         swept = 0
+        degraded = 0
         notes: list[str] = []
         for name in names:
             source = SOURCES[name](args)
@@ -175,6 +184,11 @@ def main(
                 swept += getattr(rep, "seen", 0)
                 notes.extend(_notes(rep, args))
                 notes.extend(_plan_notes(rep))
+            for f in getattr(source, "failures", ()):
+                degraded += 1
+                notes.append(f"UNSCANNED  {f}")
+            for purl in getattr(source, "skipped", ()):
+                notes.append(f"UNSCANNED  {purl}")
             for alert, why in getattr(source, "silent", ()):
                 notes.append(f"{alert.repo} #{alert.number}  silent — {why}")
 
@@ -204,7 +218,9 @@ def main(
             for n in notes:
                 print("  " + n)
 
-        _report(notifier, args, swept, applied, errors=0,
+        # A run that could not reach part of the estate is not a healthy run,
+        # even when everything it did reach was clean.
+        _report(notifier, args, swept, applied, errors=degraded,
                 actions=actions if args.mode == "apply" else None)
         return 0
     except SystemExit:

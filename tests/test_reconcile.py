@@ -172,11 +172,25 @@ def test_no_contract_configured_means_no_label_policing():
     assert plan.actions == ()
 
 
-def test_changed_title_is_an_update_not_a_new_issue():
-    i = issue(title="cobra root filesystem at 80%")
+def test_a_human_edited_body_is_never_overwritten():
+    """PER-55 was hand-written, then adopted by attaching a marker to it.
+
+    Without this rule the sweep would replace that analysis with a generated
+    template every six hours, for ever.
+    """
+    i = issue(title="a much better title someone wrote",
+              body="analysis a human did, with the import trace")
+    plan = reconcile([finding(body="generated template")], [i], policy(), NOW)
+    assert plan.actions == ()
+
+
+def test_labels_are_still_corrected_on_an_adopted_issue():
+    """The contract is the harness's to enforce; the prose is not."""
+    i = issue(title="whatever", labels=frozenset({MANAGED, "Improvement"}))
     plan = reconcile([finding()], [i], policy(), NOW)
     assert kinds(plan) == [Update]
-    assert plan.actions[0].title == "cobra root filesystem at 91%"
+    assert plan.actions[0].remove_labels == frozenset({"Improvement"})
+    assert plan.actions[0].title is None and plan.actions[0].body is None
 
 
 # ── keys ─────────────────────────────────────────────────────────────────────

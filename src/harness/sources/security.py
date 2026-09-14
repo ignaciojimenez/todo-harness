@@ -180,6 +180,12 @@ class SecuritySource:
     close_after_hours: int = 24
     name: str = "security"
 
+    failures: list[str] = field(default_factory=list)
+    """Endpoints that failed transiently. A sweep across many repos must not be
+    taken down by one of them — but a repo that silently went unscanned is
+    indistinguishable from a clean one, so these are reported and they mark the
+    run as degraded rather than healthy."""
+
     silent: list[tuple[Alert, str]] = field(default_factory=list)
     """Routed away. Never an issue; printed so what was swallowed is arguable."""
 
@@ -215,8 +221,16 @@ class SecuritySource:
                 data = json.loads(r.read())
         except urllib.error.HTTPError as e:
             if e.code in {403, 404}:
-                return []
-            raise GitHubError(f"GET {path} → HTTP {e.code}") from e
+                return []  # feature simply not enabled on this repo
+            if e.code in {401}:
+                # Not transient, and everything after it would be a false clean
+                # bill of health. Fail the run.
+                raise GitHubError(f"GET {path} → HTTP 401: token rejected") from e
+            self.failures.append(f"{path} → HTTP {e.code}")
+            return []
+        except (urllib.error.URLError, TimeoutError) as e:
+            self.failures.append(f"{path} → {type(e).__name__}")
+            return []
         return data if isinstance(data, list) else []
 
     def repos(self) -> list[str]:
