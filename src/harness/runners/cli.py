@@ -33,6 +33,7 @@ from ..models import (
 )
 from ..notifiers import HealthchecksNotifier, StdoutNotifier
 from ..ports import Source, Tracker
+from ..sources.security import SecuritySource
 from ..sources.triage import TriageSource
 from ..trackers.linear import LinearTracker
 
@@ -53,6 +54,13 @@ SOURCES: dict[str, Callable[[argparse.Namespace], Source]] = {
             x.strip() for x in a.contract.split(",") if x.strip()
         ),
         max_body_lines=a.max_body_lines,
+    ),
+    "security": lambda a: SecuritySource(
+        owner=a.owner,
+        allowed_labels=frozenset(
+            x.strip() for x in a.contract.split(",") if x.strip()
+        ),
+        close_after_hours=a.close_after_hours,
     ),
 }
 """Registry. A deployment enables the sources that suit where it runs: triage
@@ -105,6 +113,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--contract", default=os.environ.get("HARNESS_CONTRACT", DEFAULT_CONTRACT))
     p.add_argument("--max-body-lines", type=int, default=6)
+    p.add_argument("--owner", default=os.environ.get("HARNESS_OWNER", "ignaciojimenez"))
+    p.add_argument(
+        "--close-after-hours",
+        type=int,
+        default=int(os.environ.get("HARNESS_CLOSE_AFTER_HOURS", "24")),
+        help="how long a finding must be gone before its issue closes",
+    )
     p.add_argument(
         "--max-actions",
         type=int,
@@ -159,6 +174,9 @@ def main(
             if rep is not None:
                 swept += getattr(rep, "seen", 0)
                 notes.extend(_notes(rep, args))
+                notes.extend(_plan_notes(rep))
+            for alert, why in getattr(source, "silent", ()):
+                notes.append(f"{alert.repo} #{alert.number}  silent — {why}")
 
         for a in actions:
             print(("      " if args.mode == "plan" else "APPLY ") + describe(a))

@@ -2,6 +2,15 @@
 
 One-liner record of architecture/strategy calls. Newest first.
 
+## 2026-09-14
+
+- **The security sweep is a source, not a separate tool.** Its judgement — the exposure map, the EPSS thresholds, the page/plan/silent lanes — moved across untouched; only the `print` loop was deleted. The harness supplies opening, closing, dedup and heartbeating. That split is the whole point of the ports, and it is what let a prototype that ran in shadow mode for weeks arrive with its hard-won routing intact.
+- **Findings group by `(repo, manifest, package)`, never by alert.** One upgrade can fix three advisories; three tickets for one action would make this a findings list rather than a queue. Manifest is in the key because the exposure map is manifest-level — the same package in a published site and in a CI-only helper are genuinely different jobs. Verified against live data: four instances of one CodeQL rule collapsed to a single issue.
+- **The marker is the filtered alert list, not one alert.** `…/security/dependabot?q=is:open+package:pillow` stays valid as individual alerts in the group are fixed or dismissed, and it is a link a human can follow to the evidence.
+- **The first port bug would have made the sweep silently find nothing.** The exposure map is keyed by bare repo name; alerts carry `owner/name`. Every lookup missed, everything defaulted to `local`, and the run looked exactly like a clean estate. Caught by a test asserting a *positive* routing — a suite that only checked "these are silent" would have passed. `exposure_of` now normalises both forms.
+- **A clean live run is verified by forcing the condition, not by reading it.** After the sweep reported 8 alerts and 0 issues, the same live alerts were re-routed with `scripts/` flipped to public: 2 issues appeared, and the dev-scope ones stayed silent. That distinguishes correct silence from the broken kind, which is the only way to trust an empty result from something that mostly returns empty.
+- **GitHub's silence is unproven coverage, not a clean bill of health.** Verified 2026-09-14: `touchid-agent` had Dependabot alerts enabled and `golang.org/x/crypto v0.55.0` in `go.mod`, with two DoS advisories against the `ssh` package it imports, and GitHub reported zero. OSV found all three in one unauthenticated call. An OSV source is planned alongside rather than instead.
+
 ## 2026-09-13
 
 - **Only findings a source opens carry a key.** Ideas and anything captured by hand have no marker and never will — the harness manages only issues carrying an `agent/*` label, so there is nothing for it to identify. The URL requirement is a constraint on sources, not on the queue.
