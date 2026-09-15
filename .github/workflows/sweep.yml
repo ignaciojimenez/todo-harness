@@ -71,7 +71,8 @@ jobs:
       - name: plan
         env:
           LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
-        run: harness plan
+          HARNESS_GH_TOKEN: ${{ secrets.HARNESS_GH_TOKEN }}
+        run: harness plan --sources triage,security,osv
 
   apply:
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.apply)
@@ -96,4 +97,13 @@ jobs:
           # auto-disabled after 60 days of repo inactivity — sends nothing at
           # all, which is exactly the case a self-report can never cover.
           HARNESS_PING_URL: ${{ secrets.HARNESS_PING_URL }}
-        run: harness apply
+          # Read-only on security alerts across all repos. The built-in
+          # GITHUB_TOKEN only sees this one, which is why it cannot be reused.
+          HARNESS_GH_TOKEN: ${{ secrets.HARNESS_GH_TOKEN }}
+        # --max-actions 5, not the default 25. The correct plan today is ZERO
+        # actions, so five is already a surprise worth stopping on. A breaker
+        # set far above normal only catches catastrophes, and the failure this
+        # guards against — a bad exposure map, an API returning nonsense — looks
+        # like a dozen issues, not a hundred. Raise it deliberately when normal
+        # changes, never to get past a run that tripped it.
+        run: harness apply --sources triage,security,osv --max-actions 5
