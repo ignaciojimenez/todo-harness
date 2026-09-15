@@ -187,6 +187,8 @@ def main(
             for f in getattr(source, "failures", ()):
                 degraded += 1
                 notes.append(f"UNSCANNED  {f}")
+            for sup in getattr(source, "suppressions", ()):
+                notes.append(sup)
             for purl in getattr(source, "skipped", ()):
                 notes.append(f"UNSCANNED  {purl}")
             for alert, why in getattr(source, "silent", ()):

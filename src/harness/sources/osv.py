@@ -55,6 +55,32 @@ ECOSYSTEM = {
 than guessed at: a wrong ecosystem returns a confident empty answer."""
 
 
+SUPPRESSED: dict[tuple[str, str], str] = {
+    ("touchid-agent", "GO-2026-5932"): (
+        "golang.org/x/crypto/openpgp is unmaintained and has no fix, and this "
+        "repo imports only crypto/ssh and crypto/ssh/agent — verified "
+        "2026-09-15. Without this the issue can never close, because an "
+        "advisory with no fix never stops being reported."
+    ),
+}
+"""Advisories that do not apply, with the reason they do not.
+
+OSV has no notion of dismissal — unlike GitHub, where dismissing an alert
+removes it from the state the sweep reads. Without an equivalent, an advisory
+that is unfixable *and* inapplicable pins its issue open for ever, and a queue
+you cannot close things in is one you stop believing.
+
+🔴 Two rules, because this is the mechanism most likely to rot into a way of
+hiding things: every entry states **why** it does not apply, and every
+suppression is **printed on the run that applies it**. A suppression nobody can
+see is indistinguishable from a vulnerability nobody noticed.
+"""
+
+
+def suppression_for(repo: str, vuln_id: str) -> str | None:
+    return SUPPRESSED.get((repo.rsplit("/", 1)[-1], vuln_id))
+
+
 @dataclass(frozen=True, slots=True)
 class Dep:
     repo: str
@@ -119,6 +145,13 @@ class OsvSource:
     def failures(self) -> list[str]:
         return self._gh.failures
 
+    suppressions: list[str] = field(default_factory=list)
+    """Applied suppressions, printed every run. See SUPPRESSED."""
+
+    fallbacks: list[str] = field(default_factory=list)
+    """Repos whose SBOM only worked unauthenticated. Harmless for public repos,
+    but it means the token is not granting what it was meant to."""
+
     covered: int = 0
     """How many packages Dependabot already flags. Context for the gap count."""
 
@@ -151,24 +184,41 @@ class OsvSource:
         return out
 
     def _raw_sbom(self, repo: str) -> dict:
-        req = urllib.request.Request(
-            f"https://api.github.com/repos/{repo}/dependency-graph/sbom",
-            headers={
-                "Authorization": f"Bearer {self._gh.token}",
-                "Accept": "application/vnd.github+json",
-            },
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=30) as r:
-                return json.loads(r.read())
-        except Exception as e:  # noqa: BLE001
-            # NOT "this repo has no dependencies". A 403 here means the token
-            # lacks dependency-graph access, and treating that as an empty SBOM
-            # is how a live CVE gets marked fixed.
-            self._gh.failures.append(
-                f"repos/{repo}/dependency-graph/sbom → {type(e).__name__}"
-            )
-            return {}
+        """Fetch the SBOM, falling back to no auth when the token is refused.
+
+        🔴 **An under-scoped token is worse than no token here.** This endpoint
+        serves public repositories unauthenticated, but a PAT lacking repository
+        read gets 403 — so presenting credentials turned a working call into a
+        failure, and the empty result read as "no dependencies". Verified
+        2026-09-15: no auth → HTTP 200, seven packages.
+        """
+        url = f"https://api.github.com/repos/{repo}/dependency-graph/sbom"
+        accept = {"Accept": "application/vnd.github+json"}
+
+        for headers, labelled in (
+            ({**accept, "Authorization": f"Bearer {self._gh.token}"}, "with token"),
+            (accept, "unauthenticated"),
+        ):
+            try:
+                with urllib.request.urlopen(
+                    urllib.request.Request(url, headers=headers), timeout=30
+                ) as r:
+                    if labelled == "unauthenticated":
+                        self.fallbacks.append(repo)
+                    return json.loads(r.read())
+            except urllib.error.HTTPError as e:
+                if e.code in {401, 403}:
+                    continue  # try again without credentials
+                self._gh.failures.append(f"{repo} sbom → HTTP {e.code}")
+                return {}
+            except Exception as e:  # noqa: BLE001
+                self._gh.failures.append(f"{repo} sbom → {type(e).__name__}")
+                return {}
+
+        # Both attempts refused. NOT "this repo has no dependencies" — recording
+        # it is what stops the sweep concluding a fixed CVE from an empty SBOM.
+        self._gh.failures.append(f"{repo} sbom → refused with and without auth")
+        return {}
 
     def already_alerted(self) -> set[tuple[str, str]]:
         """(repo, package) pairs GitHub already reports, so we do not double up."""
@@ -209,9 +259,20 @@ class OsvSource:
         self.silent = []
         out: list[Finding] = []
         grouped: dict[tuple, list] = defaultdict(list)
+        self.suppressions = []
         for dep, vulns in zip(gaps, self._osv_batch(gaps)):
-            if vulns:
-                grouped[(dep.repo, dep.name.casefold())].append((dep, vulns))
+            kept = []
+            for v in vulns:
+                why = suppression_for(dep.repo, v.get("id", ""))
+                if why:
+                    self.suppressions.append(
+                        f"{dep.repo}  {v['id']}  suppressed — "
+                        f"{' '.join(why.split())[:140]}"
+                    )
+                else:
+                    kept.append(v)
+            if kept:
+                grouped[(dep.repo, dep.name.casefold())].append((dep, kept))
 
         for (repo, _), members in grouped.items():
             dep = members[0][0]
@@ -275,6 +336,12 @@ def _body(d: Dep, vulns: list[dict], exposure: str) -> str:
         "",
     ]
     for v in vulns[:6]:
+        affected_pkgs = sorted({
+            i.get("path", "")
+            for a in v.get("affected", [])
+            for i in (a.get("ecosystem_specific", {}) or {}).get("imports", [])
+            if i.get("path")
+        })
         fixed = sorted({
             e["fixed"]
             for a in v.get("affected", [])
@@ -288,10 +355,14 @@ def _body(d: Dep, vulns: list[dict], exposure: str) -> str:
             f"{(v.get('summary') or '').strip()[:100]}"
             f"{f' · fixed in {', '.join(fixed)}' if fixed else ' · **no fix available**'}"
         )
+        if affected_pkgs:
+            lines.append(f"  - affects only: `{'`, `'.join(affected_pkgs[:4])}`")
     lines += [
         "",
-        "📎 Check whether the vulnerable package is actually imported before "
-        "sizing the work — an advisory against a module you do not call is a "
-        "different job from one in your hot path.",
+        "🔴 **An advisory is against the module; applicability depends on the "
+        "*package* you import.** Where the affected packages are listed above, "
+        "check them against your imports before sizing this — a vulnerability "
+        "in a package you never call is not your vulnerability. For Go, "
+        "`govulncheck` answers this properly by tracing reachability.",
     ]
     return "\n".join(lines)

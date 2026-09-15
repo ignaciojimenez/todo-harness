@@ -95,3 +95,28 @@ def test_a_rejected_token_fails_the_run_instead(monkeypatch):
     monkeypatch.setattr("urllib.request.urlopen", unauthorised)
     with pytest.raises(GitHubError, match="token rejected"):
         src._get("repos/x/y/dependabot/alerts")
+
+
+def test_a_suppressed_advisory_does_not_produce_a_finding():
+    """An advisory that is unfixable AND inapplicable would pin its issue open
+    for ever, because it never stops being reported."""
+    from harness.sources.osv import suppression_for
+
+    assert suppression_for("ignaciojimenez/touchid-agent", "GO-2026-5932")
+    assert suppression_for("ignaciojimenez/touchid-agent", "GO-2026-6354") is None
+
+
+def test_suppression_is_scoped_to_one_repo():
+    """The same advisory may genuinely apply elsewhere."""
+    from harness.sources.osv import suppression_for
+
+    assert suppression_for("ignaciojimenez/other-repo", "GO-2026-5932") is None
+
+
+def test_every_suppression_states_a_reason():
+    """The mechanism most likely to rot into a way of hiding things."""
+    from harness.sources.osv import SUPPRESSED
+
+    for (repo, vid), why in SUPPRESSED.items():
+        assert len(why) > 40, f"{repo}/{vid} needs a real reason, not a shrug"
+        assert "verified" in why.lower(), f"{repo}/{vid} should say when it was checked"
