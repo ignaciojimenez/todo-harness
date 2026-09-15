@@ -214,3 +214,35 @@ def test_an_issue_claiming_our_label_without_a_marker_is_reported_not_skipped():
     plan = reconcile([], [mystery], policy(), NOW)
     assert plan.actions == ()
     assert plan.unmarked == ("PER-77",)
+
+
+# ── partial data may add, never subtract ─────────────────────────────────────
+
+
+def test_an_incomplete_sweep_never_marks_absent():
+    """A scheduled run whose token lacked dependency-graph access fetched an
+    empty SBOM, concluded a real CVE was fixed, and marked its issue absent —
+    24h from closing a live vulnerability. A source that cannot see looks
+    exactly like an estate that is clean."""
+    plan = reconcile([], [issue()], policy(), NOW, complete=False)
+    assert plan.actions == ()
+    assert plan.absence_suppressed == 1
+
+
+def test_an_incomplete_sweep_never_closes_either():
+    gone = issue(absent_since=NOW - timedelta(days=30))
+    plan = reconcile([], [gone], policy(), NOW, complete=False)
+    assert plan.actions == ()
+    assert plan.absence_suppressed == 1
+
+
+def test_an_incomplete_sweep_still_opens_what_it_did_see():
+    """Partial data is still evidence of what IS true — just not of what is not."""
+    plan = reconcile([finding()], [], policy(), NOW, complete=False)
+    assert kinds(plan) == [Open]
+
+
+def test_a_complete_sweep_is_the_default():
+    """Opting in to absence would mean forgetting to, and then never closing."""
+    plan = reconcile([], [issue()], policy(), NOW)
+    assert kinds(plan) == [MarkAbsent]

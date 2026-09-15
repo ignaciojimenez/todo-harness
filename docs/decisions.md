@@ -2,6 +2,13 @@
 
 One-liner record of architecture/strategy calls. Newest first.
 
+## 2026-09-15
+
+- 🔴 **Partial data may add; it must never subtract.** The first unattended run with all three sources marked a live CVE issue absent — twenty-four hours from closing it. The scheduled job's fine-grained PAT lacks dependency-graph access, so the SBOM came back empty, OSV saw no packages, and "found nothing" was indistinguishable from "nothing is wrong". `reconcile()` now takes `complete`; a source that had any failure suppresses every `MarkAbsent` and `Close` while still opening what it *did* see, and the count of withheld retractions is reported so a degraded run says what it held back. **A source that cannot see looks exactly like an estate that is clean, and only the source knows which it was.**
+- **A bare `except Exception: return {}` was the mechanism.** `_raw_sbom` swallowed a permissions error into an empty result, which then read as "this repo has no dependencies". Failures are recorded now. The lesson generalises past this function: the failure modes worth fearing are the ones that produce a *plausible* value rather than an error.
+- **403 does not mean the same thing on every endpoint.** On the alerts endpoints it genuinely means "this feature is off for this repo" and returning `[]` is right. On the SBOM endpoint it means "your token cannot see this", and the same `[]` is a lie. Tolerating an error code has to be decided per endpoint, not per client.
+- **The breaker would not have caught this.** It bounds how much a run *does*; this run did almost nothing. Bounding damage and detecting wrongness are different jobs, and a queue that silently retracts true findings fails quietly enough to pass every limit.
+
 ## 2026-09-14
 
 - **OSV is the gap-filler behind Dependabot, not a second opinion on it.** It reports only packages GitHub has no alert for, because running both unfiltered would open two issues for one upgrade. It exists at all because GitHub's silence turned out not to mean clean: `touchid-agent` had alerts enabled, `golang.org/x/crypto v0.55.0` in `go.mod`, and two DoS advisories against the `ssh` package it imports — GitHub reported zero. A side effect worth watching: the count of findings here *is* a measure of how far to trust GitHub's coverage.

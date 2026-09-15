@@ -318,8 +318,10 @@ class SecuritySource:
             close_after=timedelta(hours=self.close_after_hours),
             allowed_labels=self.allowed_labels,
         )
+        findings = self.findings()
         result = reconcile(
-            self.findings(), managed, policy, datetime.now(timezone.utc)
+            findings, managed, policy, datetime.now(timezone.utc),
+            complete=not self.failures,
         )
         self.report = result
         return result.actions

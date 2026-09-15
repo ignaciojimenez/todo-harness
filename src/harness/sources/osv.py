@@ -161,7 +161,13 @@ class OsvSource:
         try:
             with urllib.request.urlopen(req, timeout=30) as r:
                 return json.loads(r.read())
-        except Exception:  # noqa: BLE001 - a repo without a graph is not an error
+        except Exception as e:  # noqa: BLE001
+            # NOT "this repo has no dependencies". A 403 here means the token
+            # lacks dependency-graph access, and treating that as an empty SBOM
+            # is how a live CVE gets marked fixed.
+            self._gh.failures.append(
+                f"repos/{repo}/dependency-graph/sbom → {type(e).__name__}"
+            )
             return {}
 
     def already_alerted(self) -> set[tuple[str, str]]:
@@ -241,6 +247,7 @@ class OsvSource:
                 allowed_labels=self.allowed_labels,
             ),
             datetime.now(timezone.utc),
+            complete=not self.failures,
         )
         self.report = result
         return result.actions

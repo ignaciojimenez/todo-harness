@@ -237,6 +237,12 @@ def main(
 def _plan_notes(plan) -> list[str]:
     """Things a reconciling source saw but would not act on."""
     out = []
+    n = getattr(plan, "absence_suppressed", 0)
+    if n:
+        out.append(
+            f"{n} issue(s) NOT marked absent — the sweep was incomplete, so "
+            "absence proves nothing this run"
+        )
     for ref in getattr(plan, "adopted", ()):
         out.append(f"{ref}  adopted by a human — the harness has stopped touching it")
     for ref in getattr(plan, "unmarked", ()):

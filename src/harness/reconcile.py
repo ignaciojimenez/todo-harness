@@ -70,6 +70,11 @@ class Policy:
 @dataclass(frozen=True, slots=True)
 class Plan:
     actions: tuple[Action, ...]
+    absence_suppressed: int = 0
+    """Issues that would have been marked absent or closed, but were not because
+    the sweep was incomplete. Reported, so a degraded run says what it withheld
+    rather than looking like a quiet one."""
+
     adopted: tuple[str, ...] = ()
     """Issues a human has taken. Reported, never acted on."""
 
@@ -85,11 +90,20 @@ def reconcile(
     managed: Sequence[Issue],
     policy: Policy,
     now: datetime,
+    complete: bool = True,
 ) -> Plan:
     """Return the actions that reconcile `findings` against `managed`.
 
     `managed` is every open issue carrying the policy's label, each already
     carrying the key and absence mark the tracker read back for it.
+
+    🔴 **`complete=False` means the source could not see everything, and then
+    absence proves nothing.** Partial data may add; it must never subtract. This
+    is not hypothetical: a scheduled run whose token lacked dependency-graph
+    access fetched an empty SBOM, concluded a real CVE had been fixed, and
+    marked its issue absent — twenty-four hours from closing a live
+    vulnerability. A source that cannot see is indistinguishable from an estate
+    that is clean, and only the source knows which it was.
     """
     actionable = {f.key: f for f in findings if f.lane is not Lane.SILENT}
 
@@ -99,6 +113,7 @@ def reconcile(
     unmarked = [i.ref or i.id for i in ours if not i.key]
 
     actions: list[Action] = []
+    suppressed = 0
 
     for key, finding in actionable.items():
         issue = by_key.get(key)
@@ -115,6 +130,9 @@ def reconcile(
     for key, issue in by_key.items():
         if key in actionable or issue.closed:
             continue
+        if not complete:
+            suppressed += 1
+            continue
         if issue.absent_since is None:
             actions.append(MarkAbsent(issue.id, since=now, why="no longer reported"))
             continue
@@ -128,6 +146,7 @@ def reconcile(
         actions=tuple(actions),
         adopted=tuple(adopted),
         unmarked=tuple(unmarked),
+        absence_suppressed=suppressed,
     )
 
 
