@@ -114,16 +114,23 @@ class TriageSource:
 def _projects_named(issue: Issue, projects: Iterable[str]) -> list[str]:
     """Projects whose name appears in the issue text.
 
-    Matching is whole-token and case-insensitive. A substring match would map
-    anything mentioning "dotfiles" in passing onto that project, and the cost of
-    a wrong project is higher than the cost of leaving it untriaged.
+    Matching is whole-token and **case-sensitive**: a project is named when its
+    name appears as written. A substring match would map anything mentioning
+    "dotfiles" in passing onto that project; a case-insensitive one filed every
+    issue about "fleet hosts" or "hardened fleet builds" under `Fleet` — eight
+    of the eleven wrong matches in a backtest over all 77 issues on 2026-09-19.
+    A misfiled issue leaves the untriaged query and is never looked at again,
+    so missing a lowercase mention is the right side to err on.
+
+    Known limit: a repo cited as an *example* ("same bug as touchid-agent") is
+    still a match. Text cannot tell mention from ownership.
     """
-    haystack = f"{issue.title}\n{issue.body}".lower()
+    haystack = f"{issue.title}\n{issue.body}"
     found = []
     for p in projects:
         if not p:
             continue
-        if re.search(rf"(?<![\w-]){re.escape(p.lower())}(?![\w-])", haystack):
+        if re.search(rf"(?<![\w-]){re.escape(p)}(?![\w-])", haystack):
             found.append(p)
     return found
 
