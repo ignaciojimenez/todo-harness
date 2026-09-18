@@ -4,6 +4,7 @@ One-liner record of architecture/strategy calls. Newest first.
 
 ## 2026-09-18
 
+- **Aikido stays outside the harness.** Its free tier exposes no API, so its findings cannot become a source; the weekly Slack digest is counts only. It is kept as an independent cross-check — a count there with no matching issue here is a coverage gap to chase, as PER-55 was.
 - **A PAGE finding pages once, when its issue opens — and the open issue is the record.** The lane existed and nothing called `page()`, so a leaked secret became an Urgent issue that woke nobody. Paging on creation needs no second store: the next sweep finds the issue and stays quiet. A page that fails to send fails the run, so the dead-man's switch alerts in its place.
 - **A repo missing from the exposure map is `unknown`, and asks to be classified.** Reverses the earlier "silent by default": that routed any new repo's runtime vulnerabilities to silent, the map's gap read as a verdict. Unknown plans, never pages.
 - **A scanner that is off is a finding, not a shrug.** GitHub offers no default for new personal repos that we could find, so the sweep checks instead — which also catches one switched off later. Only GitHub's explicit "disabled" counts; any other refusal marks the run incomplete, because a token that may not look is indistinguishable from a clean repo.
