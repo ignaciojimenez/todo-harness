@@ -276,3 +276,16 @@ def test_test_page_sends_exactly_one_page(monkeypatch):
     n = NullNotifier()
     assert main(["test-page"], notifier=n) == 0
     assert len(n.pages) == 1 and n.beats == [], "a test page is not a sweep"
+
+
+def test_a_bare_webhook_path_is_accepted():
+    """infrastructure-automation stores webhooks as the path after
+    /services/ and prefixes the host itself. The harness's secret was set the
+    same way, and the first real test page failed with "unknown url type"."""
+    from harness.models import Finding
+    from harness.notifiers import SlackNotifier
+
+    sent = []
+    SlackNotifier("T000/B000/xyz", post=lambda url, body: sent.append(url)).page(
+        Finding(key="https://x.test/a", title="t"))
+    assert sent == ["https://hooks.slack.com/services/T000/B000/xyz"]
