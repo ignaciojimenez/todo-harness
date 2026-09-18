@@ -2,6 +2,11 @@
 
 One-liner record of architecture/strategy calls. Newest first.
 
+## 2026-09-19
+
+- **A project is named when its name appears as written — case-sensitive.** Case-insensitive matching read the common noun "fleet" as the `Fleet` project: a backtest of the rule over all 77 PER issues gave 11 wrong single matches against 8 right, eight of them `Fleet`. Now 4 wrong, 7 right. Two lowercase mentions no longer match and stay untriaged, which is the safe side: a misfiled issue leaves the untriaged query for good. The remaining misses are repos cited as examples, which text cannot tell from ownership.
+- **No model for project assignment.** Evaluated TypeSafe's Jev (a typed-choice model with confidence) for this decision. Rejected on evidence: one untriaged issue across 45 runs, closed without ever needing a project. Proving a <5% misfile rate needs ~60 clean cases — over a year at this rate — and the cost is a vendor secret in CI plus private issue text leaving the estate. Revisit if intake volume makes triage time noticeable.
+
 ## 2026-09-18
 
 - 🔴 **A sweep that sees no repositories is incomplete, not clean.** An empty repo list with HTTP 200 — a mistyped owner, a token that lists nothing — was read as a complete sweep of an empty estate, so every open `agent/sec` issue would have been marked absent and closed a day later. Found while fixing the heartbeat, not by any run: the same "a source that cannot see looks exactly like an estate that is clean" as 2026-09-15, one level up.

@@ -12,7 +12,7 @@ from harness.sources.triage import TriageSource
 
 CONTRACT = frozenset({"agent/fleet", "agent/sec", "needs/decision",
                       "needs/laptop", "kind/broken", "kind/new"})
-PROJECTS = ["infrastructure-automation", "dotfiles", "touchid-agent", "No repo"]
+PROJECTS = ["infrastructure-automation", "dotfiles", "touchid-agent", "No repo", "Fleet"]
 
 
 class FakeTracker:
@@ -80,6 +80,24 @@ def test_substring_does_not_count_as_a_project_match():
     """"dotfiles-adjacent" must not map onto the dotfiles project."""
     t = FakeTracker([Issue(id="1", title="something dotfiles-adjacent")])
     assert list(source().plan(t)) == []
+
+
+def test_a_common_word_is_not_a_project_name():
+    """PER-47 belongs to touchid-agent and talks about "hardened fleet builds".
+
+    Matching case-insensitively filed it under `Fleet` — and a filed issue leaves
+    the untriaged query, so the mistake would never be looked at again.
+    """
+    t = FakeTracker([Issue(id="1", title="Build-time flag for hardened fleet builds")])
+    assert list(source().plan(t)) == []
+
+
+def test_a_project_named_as_written_still_matches():
+    """The fix must not work by making `Fleet` unmatchable."""
+    t = FakeTracker([Issue(id="1", title="cabinet vent sizing",
+                           body="Belongs in Fleet.")])
+    (action,) = source().plan(t)
+    assert action.project == "Fleet"
 
 
 def test_long_body_is_reported_never_rewritten():
