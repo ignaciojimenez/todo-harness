@@ -87,7 +87,7 @@ def test_healthchecks_pings_start_then_success():
     n = HealthchecksNotifier("https://hc.example/uuid", inner=NullNotifier(),
                              transport=seen.append)
     n.start()
-    n.heartbeat(Heartbeat(source="x", swept=0, opened=0, updated=0, closed=0))
+    n.heartbeat(Heartbeat(source="x", opened=0, updated=0, closed=0))
     assert seen == ["https://hc.example/uuid/start", "https://hc.example/uuid"]
 
 
@@ -95,7 +95,7 @@ def test_healthchecks_reports_failure_when_the_run_had_errors():
     seen: list[str] = []
     n = HealthchecksNotifier("https://hc.example/uuid", inner=NullNotifier(),
                              transport=seen.append)
-    n.heartbeat(Heartbeat(source="x", swept=0, opened=0, updated=0, closed=0, errors=1))
+    n.heartbeat(Heartbeat(source="x", opened=0, updated=0, closed=0, errors=1))
     assert seen == ["https://hc.example/uuid/fail"]
 
 
@@ -109,7 +109,7 @@ def test_a_broken_ping_never_takes_the_run_down(capsys):
 
     n = HealthchecksNotifier("https://hc.example/uuid", inner=NullNotifier(),
                              transport=boom)
-    n.heartbeat(Heartbeat(source="x", swept=0, opened=0, updated=0, closed=0))
+    n.heartbeat(Heartbeat(source="x", opened=0, updated=0, closed=0))
     assert "heartbeat ping failed" in capsys.readouterr().err
 
 
@@ -156,7 +156,7 @@ def test_a_failed_ping_never_leaks_the_url(capsys):
         raise OSError(f"failed to open {u}")
 
     HealthchecksNotifier(url, inner=NullNotifier(), transport=boom).heartbeat(
-        Heartbeat(source="x", swept=0, opened=0, updated=0, closed=0)
+        Heartbeat(source="x", opened=0, updated=0, closed=0)
     )
     err = capsys.readouterr().err
     assert "super-secret-uuid" not in err
@@ -165,6 +165,33 @@ def test_a_failed_ping_never_leaks_the_url(capsys):
 
 
 
+
+
+# ── heartbeat ────────────────────────────────────────────────────────────────
+
+
+class Counted:
+    """A source that saw `seen` things and proposes nothing."""
+
+    def __init__(self, seen, unit):
+        self.seen, self.unit = seen, unit
+
+    def plan(self, tracker):
+        return []
+
+
+def test_the_heartbeat_counts_every_source_in_its_own_unit(monkeypatch, capsys):
+    """It printed `swept 0` after a sweep across seventeen repos, because only
+    triage reported a count. A number that reads the same for "saw everything,
+    all clean" and "saw nothing" is not a heartbeat."""
+    from harness.runners import cli
+
+    monkeypatch.setitem(cli.SOURCES, "repos", lambda a: Counted(17, "repos"))
+    monkeypatch.setitem(cli.SOURCES, "pkgs", lambda a: Counted(61, "packages"))
+    main(["plan", "--sources", "triage,repos,pkgs"],
+         tracker=FakeTracker([]), notifier=None)
+    out = capsys.readouterr().out
+    assert "swept 0 untriaged, 17 repos, 61 packages" in out
 
 
 # ── pages ────────────────────────────────────────────────────────────────────

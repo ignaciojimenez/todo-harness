@@ -120,3 +120,19 @@ def test_every_suppression_states_a_reason():
     for (repo, vid), why in SUPPRESSED.items():
         assert len(why) > 40, f"{repo}/{vid} needs a real reason, not a shrug"
         assert "verified" in why.lower(), f"{repo}/{vid} should say when it was checked"
+
+
+def test_seen_counts_the_packages_checked(monkeypatch):
+    """A token that loses dependency-graph access shrinks this number long
+    before anything else notices. It must reach the heartbeat."""
+    from harness.sources.osv import OsvSource
+
+    src = OsvSource(owner="x", token="t")
+    monkeypatch.setattr(src._gh, "repos", lambda: ["r"])
+    monkeypatch.setattr(src._gh, "_get", lambda path, required=False: [])
+    monkeypatch.setattr(src, "_raw_sbom", lambda repo: {"sbom": {"packages": [
+        {"externalRefs": [{"referenceLocator": "pkg:pypi/requests@2.32.0"}]},
+        {"externalRefs": [{"referenceLocator": "pkg:npm/vitest@1.0.0"}]},
+    ]}})
+    assert len(src.deps()) == 2
+    assert src.seen == 2 and src.unit == "packages"

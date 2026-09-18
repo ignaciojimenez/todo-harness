@@ -189,6 +189,10 @@ class SecuritySource:
     allowed_labels: frozenset[str] = frozenset()
     close_after_hours: int = 24
     name: str = "security"
+    unit: str = "repos"
+
+    seen: int = 0
+    """Repos swept. Zero is never a clean estate — see `repos()`."""
 
     failures: list[str] = field(default_factory=list)
     """Endpoints that failed transiently. A sweep across many repos must not be
@@ -284,15 +288,28 @@ class SecuritySource:
         return out
 
     def repos(self) -> list[str]:
-        return [
+        """🔴 An empty list with HTTP 200 is not an empty estate. A mistyped
+        owner or a token that lists nothing returns exactly that, and read as a
+        complete sweep it marks every open issue absent — closed a day later,
+        on no evidence at all. So it marks the sweep incomplete instead."""
+        before = len(self.failures)
+        names = [
             r["name"]
             for r in self._get(f"users/{self.owner}/repos?per_page=100")
             if not r.get("archived")
         ]
+        if not names and len(self.failures) == before:
+            self.failures.append(
+                f"users/{self.owner}/repos → no repositories to sweep; a wrong "
+                "owner or a blind token looks exactly like an empty estate"
+            )
+        return names
 
     def alerts(self) -> list[Alert]:
         found: list[Alert] = []
-        for name in self.repos():
+        names = self.repos()
+        self.seen = len(names)
+        for name in names:
             repo = f"{self.owner}/{name}"
             for a in self._get(f"repos/{repo}/dependabot/alerts?state=open&per_page=100",
                                required=True):

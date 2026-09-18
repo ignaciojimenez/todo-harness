@@ -134,6 +134,11 @@ class OsvSource:
     allowed_labels: frozenset[str] = frozenset()
     close_after_hours: int = 24
     name: str = "osv"
+    unit: str = "packages"
+
+    seen: int = 0
+    """Packages checked against OSV. A token losing dependency-graph access
+    shrinks this long before anything else notices."""
 
     silent: list = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
@@ -181,6 +186,7 @@ class OsvSource:
                         continue
                     eco, pkg, ver = parsed
                     out.append(Dep(repo, eco, pkg, ver))
+        self.seen = len(out)
         return out
 
     def _raw_sbom(self, repo: str) -> dict:
