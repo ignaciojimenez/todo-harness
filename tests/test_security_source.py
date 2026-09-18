@@ -348,7 +348,7 @@ def test_an_owner_with_no_visible_repos_marks_the_sweep_incomplete(monkeypatch):
 
 
 def test_seen_counts_the_repos_swept(monkeypatch):
-    """The heartbeat's number. It said 0 for a sweep across seventeen repos,
+    """The heartbeat's number. It said 0 for a sweep across fifteen repos,
     which is the same thing it would say for a sweep that saw none."""
     from harness.sources.security import SecuritySource
 

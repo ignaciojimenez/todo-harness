@@ -181,7 +181,7 @@ class Counted:
 
 
 def test_the_heartbeat_counts_every_source_in_its_own_unit(monkeypatch, capsys):
-    """It printed `swept 0` after a sweep across seventeen repos, because only
+    """It printed `swept 0` after a sweep across fifteen repos, because only
     triage reported a count. A number that reads the same for "saw everything,
     all clean" and "saw nothing" is not a heartbeat."""
     from harness.runners import cli
