@@ -202,48 +202,65 @@ class SecuritySource:
     # ── fetching ─────────────────────────────────────────────────────────────
 
     def _get(self, path: str) -> list[dict]:
-        """GET a collection, returning [] where a feature is simply off.
+        """GET a collection — every page of it — returning [] where a feature
+        is simply off.
 
         404 and 403 mean "not enabled here", not "broken" — most repos have
         code scanning or secret scanning switched off, and a sweep that treated
         that as an error would never finish.
+
+        🔴 Pages are followed by the `Link` header, which is the only scheme the
+        alert endpoints support (they page by cursor, not `page=`). The port
+        once read page one and stopped: alert 101 went unread, and the
+        reconciler would have closed its issue as fixed. A page that fails
+        after the first marks the sweep incomplete rather than returning a
+        partial list as if it were whole.
         """
-        req = urllib.request.Request(
-            f"{API}/{path.lstrip('/')}",
-            headers={
-                "Authorization": f"Bearer {self.token}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=30) as r:
-                data = json.loads(r.read())
-        except urllib.error.HTTPError as e:
-            if e.code in {403, 404}:
-                return []  # feature simply not enabled on this repo
-            if e.code in {401}:
-                # Not transient, and everything after it would be a false clean
-                # bill of health. Fail the run.
-                raise GitHubError(f"GET {path} → HTTP 401: token rejected") from e
-            self.failures.append(f"{path} → HTTP {e.code}")
-            return []
-        except (urllib.error.URLError, TimeoutError) as e:
-            self.failures.append(f"{path} → {type(e).__name__}")
-            return []
-        return data if isinstance(data, list) else []
+        url = f"{API}/{path.lstrip('/')}"
+        out: list[dict] = []
+        first = True
+        while url:
+            if not url.startswith(f"{API}/"):
+                # The next URL is taken from a response header, and the request
+                # carries the token. Never send it anywhere but the API.
+                self.failures.append(f"{path} → refused off-API next page {url}")
+                return out
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "Authorization": f"Bearer {self.token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    data = json.loads(r.read())
+                    url = _next_page(r.headers.get("Link"))
+            except urllib.error.HTTPError as e:
+                if e.code in {403, 404} and first:
+                    return []  # feature simply not enabled on this repo
+                if e.code in {401}:
+                    # Not transient, and everything after it would be a false
+                    # clean bill of health. Fail the run.
+                    raise GitHubError(f"GET {path} → HTTP 401: token rejected") from e
+                self.failures.append(f"{path} → HTTP {e.code}")
+                return out
+            except (urllib.error.URLError, TimeoutError) as e:
+                self.failures.append(f"{path} → {type(e).__name__}")
+                return out
+            if not isinstance(data, list):
+                return out
+            out.extend(data)
+            first = False
+        return out
 
     def repos(self) -> list[str]:
-        out = []
-        page = 1
-        while True:
-            batch = self._get(f"users/{self.owner}/repos?per_page=100&page={page}")
-            if not batch:
-                return out
-            out.extend(r["name"] for r in batch if not r.get("archived"))
-            if len(batch) < 100:
-                return out
-            page += 1
+        return [
+            r["name"]
+            for r in self._get(f"users/{self.owner}/repos?per_page=100")
+            if not r.get("archived")
+        ]
 
     def alerts(self) -> list[Alert]:
         found: list[Alert] = []
@@ -325,6 +342,15 @@ class SecuritySource:
         )
         self.report = result
         return result.actions
+
+
+def _next_page(link: str | None) -> str | None:
+    """The `rel="next"` URL from a GitHub `Link` header, if there is one."""
+    for part in (link or "").split(","):
+        url, _, rel = part.partition(";")
+        if rel.strip() == 'rel="next"':
+            return url.strip().strip("<>")
+    return None
 
 
 def _title(a: Alert, n: int) -> str:
