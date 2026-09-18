@@ -24,6 +24,10 @@ on:
         description: "Apply the plan instead of only printing it"
         type: boolean
         default: false
+      test_page:
+        description: "Send one test page to Slack, to prove the channel works"
+        type: boolean
+        default: false
 
 # Least privilege, stated here rather than inherited: the repo default can be
 # changed by someone else later, this cannot be changed by accident.
@@ -100,6 +104,8 @@ jobs:
           # Read-only on security alerts across all repos. The built-in
           # GITHUB_TOKEN only sees this one, which is why it cannot be reused.
           HARNESS_GH_TOKEN: ${{ secrets.HARNESS_GH_TOKEN }}
+          # Where a PAGE finding goes, once, on the sweep that opens its issue.
+          HARNESS_SLACK_WEBHOOK: ${{ secrets.HARNESS_SLACK_WEBHOOK }}
         # --max-actions 5, not the default 25. The correct plan today is ZERO
         # actions, so five is already a surprise worth stopping on. A breaker
         # set far above normal only catches catastrophes, and the failure this
@@ -107,3 +113,23 @@ jobs:
         # like a dozen issues, not a hundred. Raise it deliberately when normal
         # changes, never to get past a run that tripped it.
         run: harness apply --sources triage,security,osv --max-actions 5
+
+  test-page:
+    # Only on request, and holding only the webhook: proving the channel needs
+    # nothing else.
+    if: github.event_name == 'workflow_dispatch' && inputs.test_page
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - run: pip install .
+      - name: test page
+        env:
+          HARNESS_SLACK_WEBHOOK: ${{ secrets.HARNESS_SLACK_WEBHOOK }}
+        run: harness test-page

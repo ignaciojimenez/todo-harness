@@ -53,6 +53,8 @@ EXPOSURE: dict[str, list[tuple[str, str]]] = {
     ],
     "recordsdelmundo-site-static": [("", "public")],
     "touchid-agent": [("", "supplychain")],  # brew tap → other people's laptops
+    "homebrew-tap": [("", "supplychain")],  # the formula that installs it
+    "rpi-provisioner": [("", "supplychain")],  # writes the images hosts boot from
     "infrastructure-automation": [("", "supplychain")],  # controls the fleet
     "todo-harness": [("", "supplychain")],  # holds tracker write credentials
 }
@@ -71,13 +73,19 @@ EPSS_PAGE_PERCENTILE = 0.90
 def exposure_of(repo: str, path: str | None) -> str:
     """Exposure for a manifest. Accepts `name` or `owner/name`.
 
+    A repo missing from the map is `unknown`, never `local`. Defaulting to local
+    routed a runtime vulnerability in any new repo to silent: the map's gap read
+    as a verdict, and the fix for a missing classification is to ask for one.
+
     🔴 Normalising is not cosmetic. The map is keyed by bare name while alerts
     carry `owner/name`, so the first version of this matched nothing and
     classified every finding `local` — a sweep that silently found nothing and
     looked exactly like a clean estate.
     """
     name = repo.rsplit("/", 1)[-1]
-    for prefix, exp in EXPOSURE.get(name, []):
+    if name not in EXPOSURE:
+        return "unknown"
+    for prefix, exp in EXPOSURE[name]:
         if (path or "").startswith(prefix):
             return exp
     return "local"
@@ -125,6 +133,8 @@ def route(a: Alert) -> tuple[Lane, str]:
             return Lane.PLAN, "runtime dependency of an internet-facing service"
         if a.exposure == "supplychain":
             return Lane.PLAN, "runtime dependency of something distributed to machines"
+        if a.exposure == "unknown":
+            return Lane.PLAN, "repo is not in the exposure map — classify it in EXPOSURE"
         return Lane.SILENT, f"runtime dependency of a {a.exposure}-only manifest"
 
     if a.kind == "code":
@@ -186,6 +196,11 @@ class SecuritySource:
     indistinguishable from a clean one, so these are reported and they mark the
     run as degraded rather than healthy."""
 
+    gaps: list[str] = field(default_factory=list)
+    """Repos where GitHub says a scanner is **disabled**. Each becomes a finding:
+    a repo nobody scans looks exactly like a clean one, and a new repo starts
+    unscanned unless someone remembers. Re-enabling it closes the issue."""
+
     silent: list[tuple[Alert, str]] = field(default_factory=list)
     """Routed away. Never an issue; printed so what was swallowed is arguable."""
 
@@ -201,7 +216,7 @@ class SecuritySource:
 
     # ── fetching ─────────────────────────────────────────────────────────────
 
-    def _get(self, path: str) -> list[dict]:
+    def _get(self, path: str, required: bool = False) -> list[dict]:
         """GET a collection — every page of it — returning [] where a feature
         is simply off.
 
@@ -215,6 +230,12 @@ class SecuritySource:
         reconciler would have closed its issue as fixed. A page that fails
         after the first marks the sweep incomplete rather than returning a
         partial list as if it were whole.
+
+        `required` is for scanners every repo should have. There, "not enabled"
+        is not a shrug: GitHub's 404 says *"Secret scanning is disabled on this
+        repository."* (captured 2026-09-18), which is recorded as a gap. Any
+        other refusal — a token missing a permission, say — cannot be told apart
+        from a clean repo, so it marks the sweep incomplete instead.
         """
         url = f"{API}/{path.lstrip('/')}"
         out: list[dict] = []
@@ -238,6 +259,13 @@ class SecuritySource:
                     data = json.loads(r.read())
                     url = _next_page(r.headers.get("Link"))
             except urllib.error.HTTPError as e:
+                if e.code in {403, 404} and first and required:
+                    msg = _message(e)
+                    if "disabled" in msg.lower():
+                        self.gaps.append(path)
+                    else:
+                        self.failures.append(f"{path} → HTTP {e.code}: {msg}")
+                    return []
                 if e.code in {403, 404} and first:
                     return []  # feature simply not enabled on this repo
                 if e.code in {401}:
@@ -266,7 +294,8 @@ class SecuritySource:
         found: list[Alert] = []
         for name in self.repos():
             repo = f"{self.owner}/{name}"
-            for a in self._get(f"repos/{repo}/dependabot/alerts?state=open&per_page=100"):
+            for a in self._get(f"repos/{repo}/dependabot/alerts?state=open&per_page=100",
+                               required=True):
                 adv = a.get("security_advisory") or {}
                 dep = a.get("dependency") or {}
                 found.append(Alert(
@@ -288,7 +317,8 @@ class SecuritySource:
                     severity=rule.get("security_severity_level") or rule.get("severity"),
                     path=loc.get("path"),
                 ))
-            for a in self._get(f"repos/{repo}/secret-scanning/alerts?state=open&per_page=100"):
+            for a in self._get(f"repos/{repo}/secret-scanning/alerts?state=open&per_page=100",
+                               required=True):
                 found.append(Alert(
                     kind="secret", repo=repo, number=a.get("number", 0),
                     title=a.get("secret_type_display_name") or "secret",
@@ -322,6 +352,7 @@ class SecuritySource:
             out.append(f)
             if lane is Lane.PAGE:
                 self.paged.append(f)
+        out.extend(_gap_finding(p, self.managed_label) for p in self.gaps)
         return out
 
     def plan(self, tracker: Tracker) -> Iterable[Action]:
@@ -342,6 +373,43 @@ class SecuritySource:
         )
         self.report = result
         return result.actions
+
+
+def _message(e: urllib.error.HTTPError) -> str:
+    """GitHub's own words for a refusal — the only thing that tells "disabled"
+    from "you may not look"."""
+    try:
+        return str(json.loads(e.read() or b"{}").get("message") or "")
+    except (ValueError, AttributeError, OSError):
+        return ""
+
+
+def _gap_finding(path: str, label: str) -> Finding:
+    """A scanner switched off, as a piece of work. Closes itself once it is on."""
+    _, owner, name, endpoint = path.split("?")[0].split("/")[:4]
+    scanner = endpoint.replace("-", " ")
+    fix = (
+        f"`gh api -X PATCH repos/{owner}/{name}` with "
+        '`security_and_analysis.secret_scanning` and '
+        '`secret_scanning_push_protection` set to `enabled`'
+        if endpoint == "secret-scanning"
+        else f"`gh api -X PUT repos/{owner}/{name}/vulnerability-alerts`"
+    )
+    return Finding(
+        key=f"https://github.com/{owner}/{name}/settings/security_analysis#{endpoint}",
+        title=f"{scanner.capitalize()} is off in {name}",
+        body="\n".join([
+            f"GitHub reports {scanner} **disabled** on **{owner}/{name}**, so the "
+            "sweep cannot see what it would have found there — which looks "
+            "exactly like a clean repo.",
+            "",
+            f"Enable it (free on public repos): {fix}. This issue closes on the "
+            "next sweep.",
+        ]),
+        lane=Lane.PLAN,
+        labels=frozenset({label}),
+        priority=2,
+    )
 
 
 def _next_page(link: str | None) -> str | None:

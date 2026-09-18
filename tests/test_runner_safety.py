@@ -165,3 +165,114 @@ def test_a_failed_ping_never_leaks_the_url(capsys):
 
 
 
+
+
+# ── pages ────────────────────────────────────────────────────────────────────
+
+
+class OneFinding:
+    """A source that proposes opening exactly one issue."""
+
+    def __init__(self, lane):
+        from harness.models import Finding, Lane, Open
+
+        self.actions = [Open(Finding(
+            key="https://github.com/o/r/security/secret-scanning/1",
+            title="Exposed token in r", lane=Lane(lane)), why="newly true")]
+
+    def plan(self, tracker):
+        return self.actions
+
+
+def _with_source(monkeypatch, lane):
+    from harness.runners import cli
+
+    monkeypatch.setitem(cli.SOURCES, "one", lambda a: OneFinding(lane))
+
+
+def test_a_page_finding_pages_once_it_is_opened(monkeypatch):
+    """The PAGE lane existed and nothing ever called `page()`: a leaked secret
+    became an Urgent issue that woke nobody."""
+    _with_source(monkeypatch, "page")
+    n = NullNotifier()
+    t = FakeTracker([])
+    assert main(["apply", "--sources", "one"], tracker=t, notifier=n) == 0
+    assert len(t.applied) == 1
+    assert [p.title for p in n.pages] == ["Exposed token in r"]
+
+
+def test_planning_never_pages(monkeypatch):
+    _with_source(monkeypatch, "page")
+    n = NullNotifier()
+    main(["plan", "--sources", "one"], tracker=FakeTracker([]), notifier=n)
+    assert n.pages == []
+
+
+def test_a_plan_finding_does_not_page(monkeypatch):
+    _with_source(monkeypatch, "plan")
+    n = NullNotifier()
+    main(["apply", "--sources", "one"], tracker=FakeTracker([]), notifier=n)
+    assert n.pages == []
+
+
+def test_a_page_that_fails_to_send_fails_the_run(monkeypatch, capsys):
+    """A page that silently did not arrive is the failure this lane exists to
+    prevent. It must reach the heartbeat as an error, so /fail fires."""
+    _with_source(monkeypatch, "page")
+
+    class Broken(NullNotifier):
+        def page(self, finding):
+            raise RuntimeError("page not delivered: HTTP 404")
+
+    n = Broken()
+    main(["apply", "--sources", "one"], tracker=FakeTracker([]), notifier=n)
+    assert n.beats and n.beats[-1].errors == 1
+    assert "PAGE NOT SENT" in capsys.readouterr().out
+
+
+def test_slack_page_posts_the_title_and_the_evidence():
+    import json
+
+    from harness.models import Finding, Lane
+    from harness.notifiers import SlackNotifier
+
+    sent = []
+    s = SlackNotifier("https://hooks.slack.com/services/T/B/x",
+                      post=lambda url, body: sent.append((url, json.loads(body))))
+    s.page(Finding(key="https://github.com/o/r/security", title="Leak",
+                   lane=Lane.PAGE))
+    (url, body), = sent
+    assert url.endswith("/T/B/x")
+    assert "Leak" in body["text"] and "https://github.com/o/r/security" in body["text"]
+
+
+def test_a_failed_slack_page_raises_and_never_leaks_the_webhook():
+    """The webhook is a credential — anyone holding it can post as the alert."""
+    import urllib.error
+
+    import pytest
+
+    from harness.models import Finding
+    from harness.notifiers import SlackNotifier
+
+    hook = "https://hooks.slack.com/services/T/B/secret"
+
+    def boom(url, body):
+        raise urllib.error.URLError(f"cannot reach {url}")
+
+    with pytest.raises(RuntimeError) as e:
+        SlackNotifier(hook, post=boom).page(Finding(key="https://x.test/a", title="t"))
+    assert "secret" not in str(e.value) and "<webhook-url>" in str(e.value)
+
+
+def test_test_page_refuses_without_a_webhook(monkeypatch, capsys):
+    monkeypatch.delenv("HARNESS_SLACK_WEBHOOK", raising=False)
+    assert main(["test-page"], notifier=NullNotifier()) == 1
+    assert "no HARNESS_SLACK_WEBHOOK" in capsys.readouterr().err
+
+
+def test_test_page_sends_exactly_one_page(monkeypatch):
+    monkeypatch.setenv("HARNESS_SLACK_WEBHOOK", "https://hooks.slack.com/services/x")
+    n = NullNotifier()
+    assert main(["test-page"], notifier=n) == 0
+    assert len(n.pages) == 1 and n.beats == [], "a test page is not a sweep"

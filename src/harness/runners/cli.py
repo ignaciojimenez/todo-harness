@@ -25,13 +25,15 @@ from ..models import (
     Action,
     Close,
     Comment,
+    Finding,
     Heartbeat,
+    Lane,
     MarkAbsent,
     MarkPresent,
     Open,
     Update,
 )
-from ..notifiers import HealthchecksNotifier, StdoutNotifier
+from ..notifiers import HealthchecksNotifier, SlackNotifier, StdoutNotifier
 from ..ports import Source, Tracker
 from ..sources.osv import OsvSource
 from ..sources.security import SecuritySource
@@ -112,7 +114,7 @@ def _target(a: Action) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="harness")
-    p.add_argument("mode", choices=["plan", "apply"])
+    p.add_argument("mode", choices=["plan", "apply", "test-page"])
     p.add_argument("--team", default=os.environ.get("HARNESS_TEAM", "PER"))
     p.add_argument(
         "--sources",
@@ -139,6 +141,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--slack-webhook",
+        default=os.environ.get("HARNESS_SLACK_WEBHOOK"),
+        help="Slack incoming webhook for pages. Without it, pages only reach stdout.",
+    )
+    p.add_argument(
         "--ping-url",
         default=os.environ.get("HARNESS_PING_URL"),
         help="healthchecks.io-style dead-man's switch. Absence of a ping is the alert.",
@@ -154,9 +161,17 @@ def main(
     args = build_parser().parse_args(argv)
 
     if notifier is None:
-        notifier = (
-            HealthchecksNotifier(args.ping_url) if args.ping_url else StdoutNotifier()
+        inner = (
+            SlackNotifier(args.slack_webhook) if args.slack_webhook
+            else StdoutNotifier()
         )
+        notifier = (
+            HealthchecksNotifier(args.ping_url, inner=inner) if args.ping_url
+            else inner
+        )
+    if args.mode == "test-page":
+        return _test_page(notifier, args)
+
     start = getattr(notifier, "start", None)
     if callable(start):
         start()
@@ -214,6 +229,16 @@ def main(
             for a in actions:
                 tracker.apply(a)
                 applied += 1
+                # Page once, on the sweep that opens the issue — and only after
+                # it exists. The open issue is the record that the page went
+                # out, so the next sweep finds it and stays quiet; no second
+                # store to keep in step.
+                if isinstance(a, Open) and a.finding.lane is Lane.PAGE:
+                    try:
+                        notifier.page(a.finding)
+                    except Exception as e:  # noqa: BLE001 - reported, below
+                        degraded += 1
+                        notes.append(f"PAGE NOT SENT  {a.finding.key} — {e}")
 
         if notes:
             print("\nleft alone, needs a human:")
@@ -234,6 +259,25 @@ def main(
         else:
             print(f"run failed: {type(e).__name__}: {e}", file=sys.stderr)
         raise
+
+
+def _test_page(notifier, args) -> int:
+    """Send one page through the real path, so the channel is proven before the
+    day it matters. A pager that has never fired is a pager nobody has tested."""
+    if not args.slack_webhook:
+        print("no HARNESS_SLACK_WEBHOOK: pages would only reach stdout",
+              file=sys.stderr)
+        return 1
+    try:
+        notifier.page(Finding(
+            key="https://github.com/ignaciojimenez/todo-harness/actions",
+            title="Test page from todo-harness — the page path works",
+            lane=Lane.PAGE,
+        ))
+    except Exception as e:  # noqa: BLE001 - this is the thing being tested
+        print(f"test page failed: {e}", file=sys.stderr)
+        return 1
+    return 0
 
 
 def _plan_notes(plan) -> list[str]:
