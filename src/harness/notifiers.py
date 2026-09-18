@@ -124,6 +124,15 @@ class SlackNotifier:
     webhook_url: str
     post: Poster = _http_post
 
+    def __post_init__(self) -> None:
+        # Accept the bare path after /services/ as well as the full URL: that is
+        # how infrastructure-automation stores every webhook, so the same value
+        # works in both places. The first real test page failed on exactly this.
+        if "://" not in self.webhook_url:
+            self.webhook_url = (
+                "https://hooks.slack.com/services/" + self.webhook_url.strip().lstrip("/")
+            )
+
     def heartbeat(self, hb: Heartbeat) -> None:
         print(hb.line(), file=sys.stdout)
 
