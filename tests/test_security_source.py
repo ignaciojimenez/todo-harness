@@ -158,3 +158,104 @@ def test_exposure_accepts_both_repo_forms():
     """
     assert exposure_of("pastebin-worker", "worker/x") == "public"
     assert exposure_of("ignaciojimenez/pastebin-worker", "worker/x") == "public"
+
+
+# ── pagination: the prototype paged, the port did not ────────────────────────
+
+
+class _Page:
+    """Just enough of an HTTP response for `_get`."""
+
+    def __init__(self, body, link=None):
+        import json
+
+        self._raw = json.dumps(body).encode()
+        self.headers = {"Link": link} if link else {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self):
+        return self._raw
+
+
+def _serve(monkeypatch, pages: dict):
+    """Serve `pages` by URL; anything unlisted is a 500."""
+    import urllib.error
+
+    seen = []
+
+    def fake(req, timeout=0):
+        seen.append(req.full_url)
+        if req.full_url not in pages:
+            raise urllib.error.HTTPError(req.full_url, 500, "boom", {}, None)
+        body, link = pages[req.full_url]
+        return _Page(body, link)
+
+    monkeypatch.setattr("urllib.request.urlopen", fake)
+    return seen
+
+
+API = "https://api.github.com"
+ALERTS = f"{API}/repos/x/y/dependabot/alerts?state=open&per_page=100"
+NEXT = f"{API}/repositories/1/dependabot/alerts?state=open&per_page=100&after=abc"
+
+
+def test_alerts_past_the_first_page_are_seen(monkeypatch):
+    """Alert 101 once went unread: the port fetched one page where the
+    prototype had paginated. Unread is worse than unreported — the reconciler
+    would have closed its issue as fixed."""
+    from harness.sources.security import SecuritySource
+
+    _serve(monkeypatch, {
+        ALERTS: ([{"number": n} for n in range(100)], f'<{NEXT}>; rel="next"'),
+        NEXT: ([{"number": 100}], None),
+    })
+    src = SecuritySource(owner="x", token="t")
+    got = src._get("repos/x/y/dependabot/alerts?state=open&per_page=100")
+    assert [a["number"] for a in got] == list(range(101))
+    assert not src.failures
+
+
+def test_repos_are_listed_once_across_pages(monkeypatch):
+    """`repos()` used to page by itself; on top of a paging `_get` that would
+    sweep every repo twice."""
+    from harness.sources.security import SecuritySource
+
+    first = f"{API}/users/x/repos?per_page=100"
+    second = f"{API}/user/1/repos?per_page=100&page=2"
+    seen = _serve(monkeypatch, {
+        first: ([{"name": f"r{n}"} for n in range(100)], f'<{second}>; rel="next"'),
+        second: ([{"name": "r100"}], None),
+    })
+    got = SecuritySource(owner="x", token="t").repos()
+    assert got == [f"r{n}" for n in range(101)]
+    assert seen == [first, second]
+
+
+def test_a_failed_later_page_marks_the_sweep_incomplete(monkeypatch):
+    """Page one alone is a partial answer, and a partial answer read as whole
+    concludes absence for everything on the missing page."""
+    from harness.sources.security import SecuritySource
+
+    _serve(monkeypatch, {ALERTS: ([{"number": 1}], f'<{NEXT}>; rel="next"')})
+    src = SecuritySource(owner="x", token="t")
+    src._get("repos/x/y/dependabot/alerts?state=open&per_page=100")
+    assert src.failures and "500" in src.failures[0]
+
+
+def test_the_token_is_never_sent_off_github(monkeypatch):
+    """The next URL comes from a response header. Following it blindly would
+    hand the bearer token to whatever host it names."""
+    from harness.sources.security import SecuritySource
+
+    seen = _serve(monkeypatch, {
+        ALERTS: ([{"number": 1}], '<https://evil.example/steal>; rel="next"'),
+    })
+    src = SecuritySource(owner="x", token="t")
+    src._get("repos/x/y/dependabot/alerts?state=open&per_page=100")
+    assert seen == [ALERTS]
+    assert src.failures and "evil.example" in src.failures[0]
