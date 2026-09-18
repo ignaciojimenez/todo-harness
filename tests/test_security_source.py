@@ -43,9 +43,24 @@ def test_photography_utils_is_supplychain_not_local():
     assert exposure_of("ignaciojimenezpi.github.io", "package.json") == "public"
 
 
-def test_unknown_repo_defaults_to_local():
-    """Silent by default. A repo nobody classified must not page anyone."""
-    assert exposure_of("some/new-repo", "go.mod") == "local"
+def test_an_unmapped_repo_is_unknown_not_local():
+    """It used to default to local, which routed a runtime vulnerability in any
+    new repo to silent — the map's gap read as a verdict."""
+    assert exposure_of("some/new-repo", "go.mod") == "unknown"
+
+
+def test_an_unmapped_repo_asks_to_be_classified_but_never_pages():
+    lane, why = route(dep(repo="ignaciojimenez/new-repo", scope="runtime", epss=0.2))
+    assert lane is Lane.PLAN and "exposure map" in why
+    dev_lane, _ = route(dep(repo="ignaciojimenez/new-repo", scope="development", epss=0.2))
+    assert dev_lane is Lane.SILENT, "build-time only stays silent wherever it is"
+
+
+def test_the_tap_and_the_provisioner_are_supply_chain():
+    """Both ship code onto machines: the formula that installs touchid-agent,
+    and the images hosts boot from."""
+    assert exposure_of("homebrew-tap", "Formula/touchid-agent.rb") == "supplychain"
+    assert exposure_of("rpi-provisioner", "anything") == "supplychain"
 
 
 # ── routing ──────────────────────────────────────────────────────────────────
@@ -259,3 +274,59 @@ def test_the_token_is_never_sent_off_github(monkeypatch):
     src._get("repos/x/y/dependabot/alerts?state=open&per_page=100")
     assert seen == [ALERTS]
     assert src.failures and "evil.example" in src.failures[0]
+
+
+# ── coverage: a scanner that is off looks exactly like a clean repo ──────────
+
+
+def _refuse(monkeypatch, code: int, message: str):
+    import io
+    import json
+    import urllib.error
+
+    def fake(req, timeout=0):
+        body = io.BytesIO(json.dumps({"message": message}).encode())
+        raise urllib.error.HTTPError(req.full_url, code, "no", {}, body)
+
+    monkeypatch.setattr("urllib.request.urlopen", fake)
+
+
+SECRETS = "repos/ignaciojimenez/dotfiles/secret-scanning/alerts?state=open&per_page=100"
+
+
+def test_disabled_secret_scanning_becomes_an_issue(monkeypatch):
+    """The exact 404 GitHub returned for dotfiles on 2026-09-18."""
+    from harness.sources.security import SecuritySource, _gap_finding
+
+    _refuse(monkeypatch, 404, "Secret scanning is disabled on this repository.")
+    src = SecuritySource(owner="ignaciojimenez", token="t")
+    assert src._get(SECRETS, required=True) == []
+    assert src.gaps == [SECRETS] and not src.failures
+
+    f = _gap_finding(SECRETS, "agent/sec")
+    assert f.title == "Secret scanning is off in dotfiles"
+    assert f.lane is Lane.PLAN
+    assert f.key == ("https://github.com/ignaciojimenez/dotfiles/settings/"
+                     "security_analysis#secret-scanning")
+
+
+def test_a_refusal_that_is_not_disabled_marks_the_sweep_incomplete(monkeypatch):
+    """A token without the permission gets a 403 too. That is not a gap in the
+    repo, and it is not a clean repo either — the run must not look healthy."""
+    from harness.sources.security import SecuritySource
+
+    _refuse(monkeypatch, 403, "Resource not accessible by personal access token")
+    src = SecuritySource(owner="ignaciojimenez", token="t")
+    src._get(SECRETS, required=True)
+    assert not src.gaps
+    assert src.failures and "not accessible" in src.failures[0]
+
+
+def test_optional_scanners_stay_quiet_when_off(monkeypatch):
+    """Code scanning is set up on few repos; its 404 is not a finding."""
+    from harness.sources.security import SecuritySource
+
+    _refuse(monkeypatch, 404, "no analysis found")
+    src = SecuritySource(owner="ignaciojimenez", token="t")
+    src._get("repos/ignaciojimenez/dotfiles/code-scanning/alerts")
+    assert not src.gaps and not src.failures

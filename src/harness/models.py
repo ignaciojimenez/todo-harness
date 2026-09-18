@@ -22,7 +22,7 @@ class Lane(str, Enum):
     a tracker can act on.
     """
 
-    PAGE = "page"  # wake someone: goes to the alerting channel, never the tracker
+    PAGE = "page"  # wake someone: an issue, plus one page on the sweep that opens it
     PLAN = "plan"  # a tracker issue: real work, but nobody is woken
     SILENT = "silent"  # recorded for audit, never becomes an issue
 

@@ -2,6 +2,13 @@
 
 One-liner record of architecture/strategy calls. Newest first.
 
+## 2026-09-18
+
+- **A PAGE finding pages once, when its issue opens — and the open issue is the record.** The lane existed and nothing called `page()`, so a leaked secret became an Urgent issue that woke nobody. Paging on creation needs no second store: the next sweep finds the issue and stays quiet. A page that fails to send fails the run, so the dead-man's switch alerts in its place.
+- **A repo missing from the exposure map is `unknown`, and asks to be classified.** Reverses the earlier "silent by default": that routed any new repo's runtime vulnerabilities to silent, the map's gap read as a verdict. Unknown plans, never pages.
+- **A scanner that is off is a finding, not a shrug.** GitHub offers no default for new personal repos that we could find, so the sweep checks instead — which also catches one switched off later. Only GitHub's explicit "disabled" counts; any other refusal marks the run incomplete, because a token that may not look is indistinguishable from a clean repo.
+- **Read every page.** The port fetched one page of alerts where the prototype had paginated; alert 101 would have gone unread and its issue closed as fixed. The next-page URL comes from a response header, so it is followed only on the API host — the request carries the token.
+
 ## 2026-09-15
 
 - **An under-scoped token is worse than no token.** The SBOM endpoint serves public repositories unauthenticated — verified, HTTP 200 — but a PAT lacking repository read gets 403. Presenting credentials turned a working call into a failure whose empty result read as "no dependencies". It now falls back to unauthenticated when refused, and records that it had to.
