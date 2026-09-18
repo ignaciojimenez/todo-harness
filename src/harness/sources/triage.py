@@ -53,8 +53,13 @@ class TriageSource:
     the author's, and silently rewriting someone's words is not normalisation."""
 
     name: str = "triage"
+    unit: str = "untriaged"
 
     report: TriageReport = field(default_factory=TriageReport)
+
+    @property
+    def seen(self) -> int:
+        return self.report.seen
 
     def plan(self, tracker: Tracker) -> Iterable[Action]:
         untriaged = tracker.list_issues(

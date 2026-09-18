@@ -191,15 +191,19 @@ class Heartbeat:
     """
 
     source: str
-    swept: int
     opened: int
     updated: int
     closed: int
+    swept: tuple[tuple[int, str], ...] = ()
+    """What each source examined, in its own unit — `(17, "repos")`. Never summed:
+    untriaged issues and repositories do not add up to anything, and a total
+    lets one busy source hide another that saw nothing."""
     errors: int = 0
 
     def line(self) -> str:
+        seen = ", ".join(f"{n} {unit}" for n, unit in self.swept) or "nothing"
         s = (
-            f"{self.source}: swept {self.swept} · opened {self.opened} "
+            f"{self.source}: swept {seen} · opened {self.opened} "
             f"· updated {self.updated} · closed {self.closed}"
         )
         return s + f" · errors {self.errors}" if self.errors else s

@@ -330,3 +330,31 @@ def test_optional_scanners_stay_quiet_when_off(monkeypatch):
     src = SecuritySource(owner="ignaciojimenez", token="t")
     src._get("repos/ignaciojimenez/dotfiles/code-scanning/alerts")
     assert not src.gaps and not src.failures
+
+
+# ── blindness: seeing nothing must never read as a clean estate ─────────────
+
+
+def test_an_owner_with_no_visible_repos_marks_the_sweep_incomplete(monkeypatch):
+    """A mistyped owner, or a token that lists nothing, returns an empty list
+    with HTTP 200. Read as complete, that is a clean estate: every open
+    `agent/sec` issue would be marked absent, and closed a day later."""
+    from harness.sources.security import SecuritySource
+
+    _serve(monkeypatch, {f"{API}/users/x/repos?per_page=100": ([], None)})
+    src = SecuritySource(owner="x", token="t")
+    assert src.repos() == []
+    assert src.failures and "no repositories" in src.failures[0]
+
+
+def test_seen_counts_the_repos_swept(monkeypatch):
+    """The heartbeat's number. It said 0 for a sweep across fifteen repos,
+    which is the same thing it would say for a sweep that saw none."""
+    from harness.sources.security import SecuritySource
+
+    _serve(monkeypatch, {
+        f"{API}/users/x/repos?per_page=100": ([{"name": "a"}, {"name": "b"}], None),
+    })
+    src = SecuritySource(owner="x", token="t")
+    src.alerts()
+    assert src.seen == 2 and src.unit == "repos"

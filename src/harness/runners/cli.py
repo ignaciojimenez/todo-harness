@@ -188,15 +188,17 @@ def main(
         tracker = tracker or LinearTracker(team_key=args.team)
 
         actions: list[Action] = []
-        swept = 0
+        swept: list[tuple[int, str]] = []
         degraded = 0
         notes: list[str] = []
         for name in names:
             source = SOURCES[name](args)
             actions.extend(source.plan(tracker))
+            seen = getattr(source, "seen", None)
+            if seen is not None:
+                swept.append((seen, getattr(source, "unit", "items")))
             rep = getattr(source, "report", None)
             if rep is not None:
-                swept += getattr(rep, "seen", 0)
                 notes.extend(_notes(rep, args))
                 notes.extend(_plan_notes(rep))
             for f in getattr(source, "failures", ()):
@@ -310,7 +312,7 @@ def _notes(rep, args) -> list[str]:
 def _report(notifier, args, swept, applied, errors, note=None, actions=None):
     hb = Heartbeat(
         source=args.sources,
-        swept=swept,
+        swept=tuple(swept),
         opened=sum(isinstance(a, Open) for a in (actions or ())),
         updated=applied,
         closed=sum(isinstance(a, Close) for a in (actions or ())),
