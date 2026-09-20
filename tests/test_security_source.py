@@ -358,3 +358,123 @@ def test_seen_counts_the_repos_swept(monkeypatch):
     src = SecuritySource(owner="x", token="t")
     src.alerts()
     assert src.seen == 2 and src.unit == "repos"
+
+
+# ── analyses: a language CodeQL silently dropped looks exactly like clean ────
+
+# The real payload for touchid-agent's first CodeQL run, 2026-09-18: Go, Swift
+# and C each failed at least once, Ruby and Actions succeeded throughout. Only
+# `category`, `error` and `created_at` matter to the check; captured with
+# `gh api repos/ignaciojimenez/touchid-agent/code-scanning/analyses --paginate`.
+TOUCHID_FIRST_RUN = [
+    {"category": "/language:c-cpp",
+     "error": "unsuccessful execution, exit code: 0, description:  ",
+     "created_at": "2026-09-18T17:43:59Z"},
+    {"category": "/language:actions", "error": "", "created_at": "2026-09-18T17:44:04Z"},
+    {"category": "/language:go",
+     "error": "unsuccessful execution, exit code: 0, description:  ",
+     "created_at": "2026-09-18T17:44:12Z"},
+    {"category": "/language:ruby", "error": "", "created_at": "2026-09-18T17:44:27Z"},
+    {"category": "/language:swift",
+     "error": "unsuccessful execution, exit code: 0, description:  ",
+     "created_at": "2026-09-18T17:44:47Z"},
+    {"category": "/language:actions", "error": "", "created_at": "2026-09-18T17:47:14Z"},
+    {"category": "/language:actions", "error": "", "created_at": "2026-09-18T17:47:22Z"},
+    {"category": "/language:go",
+     "error": "unsuccessful execution, exit code: 0, description:  ",
+     "created_at": "2026-09-18T17:50:38Z"},
+    {"category": "/language:go",
+     "error": "unsuccessful execution, exit code: 0, description:  ",
+     "created_at": "2026-09-18T17:50:59Z"},
+    {"category": "/language:actions", "error": "", "created_at": "2026-09-18T17:52:33Z"},
+]
+
+
+def test_the_touchid_agent_first_run_flags_go_swift_and_c():
+    """Go, Swift and C failed and were silently dropped; Ruby and Actions ran
+    clean throughout and must not be flagged."""
+    from harness.sources.security import _analysis_errors
+
+    errors = dict(_analysis_errors(TOUCHID_FIRST_RUN))
+    assert set(errors) == {"/language:go", "/language:swift", "/language:c-cpp"}
+    assert "unsuccessful execution" in errors["/language:go"]
+
+
+def test_a_later_clean_rerun_clears_the_gap():
+    """Only the *latest* analysis per category counts — a fixed rerun (the real
+    Go rerun at 17:57:09, after this fixture) must stop the finding without
+    touching Swift or C, which never got one."""
+    from harness.sources.security import _analysis_errors
+
+    fixed = TOUCHID_FIRST_RUN + [
+        {"category": "/language:go", "error": "", "created_at": "2026-09-18T17:57:09Z"},
+    ]
+    errors = dict(_analysis_errors(fixed))
+    assert "/language:go" not in errors
+    assert {"/language:swift", "/language:c-cpp"} <= set(errors)
+
+
+def test_latest_is_by_timestamp_not_list_order():
+    """A failed rerun and its fix can land in either order within one page."""
+    from harness.sources.security import _analysis_errors
+
+    out_of_order = [
+        {"category": "/language:go", "error": "unsuccessful execution",
+         "created_at": "2026-09-18T18:00:00Z"},
+        {"category": "/language:go", "error": "", "created_at": "2026-09-18T17:00:00Z"},
+    ]
+    assert dict(_analysis_errors(out_of_order))["/language:go"] == "unsuccessful execution"
+
+
+def test_no_analyses_is_not_a_gap():
+    """Code scanning off entirely (a 404) is optional and must stay quiet —
+    same rule as the alerts endpoint."""
+    from harness.sources.security import _analysis_errors
+
+    assert _analysis_errors([]) == []
+
+
+def test_analysis_gap_becomes_a_plan_finding():
+    from harness.sources.security import _analysis_gap_finding
+
+    f = _analysis_gap_finding(
+        "ignaciojimenez/touchid-agent", "/language:go",
+        "unsuccessful execution, exit code: 0, description:  ", "agent/sec",
+    )
+    assert f.lane is Lane.PLAN
+    assert "go" in f.title.lower() and "touchid-agent" in f.title
+    assert f.key == "https://github.com/ignaciojimenez/touchid-agent/security/code-scanning#language:go"
+    assert "unsuccessful execution" in f.body
+
+
+def test_analysis_gap_key_is_stable_across_repeated_failures():
+    """The key must not embed the analysis id or timestamp — every failed
+    rerun of the same language must map to the same issue, not a new one."""
+    from harness.sources.security import _analysis_gap_finding
+
+    a = _analysis_gap_finding("o/r", "/language:go", "err one", "agent/sec")
+    b = _analysis_gap_finding("o/r", "/language:go", "err two", "agent/sec")
+    assert a.key == b.key
+
+
+ANALYSES = "repos/ignaciojimenez/touchid-agent/code-scanning/analyses?per_page=100"
+
+
+def test_a_failed_analysis_is_collected_during_the_sweep(monkeypatch):
+    """End to end: `alerts()` walks each repo's analyses, not just its alerts,
+    and records the gap the same way a disabled scanner is recorded."""
+    from harness.sources.security import SecuritySource
+
+    _serve(monkeypatch, {
+        f"{API}/users/ignaciojimenez/repos?per_page=100":
+            ([{"name": "touchid-agent"}], None),
+        f"{API}/{ANALYSES}": (TOUCHID_FIRST_RUN, None),
+    })
+    src = SecuritySource(owner="ignaciojimenez", token="t")
+    src.alerts()
+    gaps = {(repo, cat) for repo, cat, _ in src.analysis_gaps}
+    assert gaps == {
+        ("ignaciojimenez/touchid-agent", "/language:go"),
+        ("ignaciojimenez/touchid-agent", "/language:swift"),
+        ("ignaciojimenez/touchid-agent", "/language:c-cpp"),
+    }

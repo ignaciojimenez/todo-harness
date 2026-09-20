@@ -205,6 +205,13 @@ class SecuritySource:
     a repo nobody scans looks exactly like a clean one, and a new repo starts
     unscanned unless someone remembers. Re-enabling it closes the issue."""
 
+    analysis_gaps: list[tuple[str, str, str]] = field(default_factory=list)
+    """(repo, category, error) for each CodeQL language whose *latest* analysis
+    errored. Default setup drops a failed language and still reports the run a
+    success — touchid-agent's first run left Go, Swift and C unscanned with
+    only Ruby and Actions actually covered. Same shape as `gaps`: a 404 here
+    means code scanning is off entirely, which is optional and stays quiet."""
+
     silent: list[tuple[Alert, str]] = field(default_factory=list)
     """Routed away. Never an issue; printed so what was swallowed is arguable."""
 
@@ -334,6 +341,9 @@ class SecuritySource:
                     severity=rule.get("security_severity_level") or rule.get("severity"),
                     path=loc.get("path"),
                 ))
+            analyses = self._get(f"repos/{repo}/code-scanning/analyses?per_page=100")
+            for category, error in _analysis_errors(analyses):
+                self.analysis_gaps.append((repo, category, error))
             for a in self._get(f"repos/{repo}/secret-scanning/alerts?state=open&per_page=100",
                                required=True):
                 found.append(Alert(
@@ -370,6 +380,10 @@ class SecuritySource:
             if lane is Lane.PAGE:
                 self.paged.append(f)
         out.extend(_gap_finding(p, self.managed_label) for p in self.gaps)
+        out.extend(
+            _analysis_gap_finding(repo, category, error, self.managed_label)
+            for repo, category, error in self.analysis_gaps
+        )
         return out
 
     def plan(self, tracker: Tracker) -> Iterable[Action]:
@@ -422,6 +436,56 @@ def _gap_finding(path: str, label: str) -> Finding:
             "",
             f"Enable it (free on public repos): {fix}. This issue closes on the "
             "next sweep.",
+        ]),
+        lane=Lane.PLAN,
+        labels=frozenset({label}),
+        priority=2,
+    )
+
+
+def _analysis_errors(analyses: list[dict]) -> list[tuple[str, str]]:
+    """(category, error) for each category whose *most recent* analysis errored.
+
+    Latest is by `created_at`, not by list position — a failed run and its
+    fixed rerun can land in either order within one page, and picking the
+    wrong one is the whole bug this exists to catch.
+    """
+    latest: dict[str, dict] = {}
+    for a in analyses:
+        category = a.get("category")
+        if not category:
+            continue
+        current = latest.get(category)
+        if current is None or a.get("created_at", "") > current.get("created_at", ""):
+            latest[category] = a
+    return [(category, a["error"]) for category, a in latest.items() if a.get("error")]
+
+
+def _analysis_gap_finding(repo: str, category: str, error: str, label: str) -> Finding:
+    """A CodeQL language whose latest run errored, as a piece of work. Default
+    setup drops the language and reports the run a success, so this looks
+    exactly like a clean language until someone checks. Closes itself once a
+    clean analysis for this category lands.
+
+    The key carries only repo and category — never the analysis id or a
+    timestamp — so every failed rerun of the same language maps to the same
+    issue instead of opening a new one each time.
+    """
+    lang = category.strip("/").split(":", 1)[-1]
+    name = repo.rsplit("/", 1)[-1]
+    return Finding(
+        key=f"https://github.com/{repo}/security/code-scanning"
+            f"#{urllib.parse.quote(category.strip('/'), safe=':')}",
+        title=f"CodeQL {lang} analysis is failing in {name}",
+        body="\n".join([
+            f"GitHub's latest code-scanning analysis for **{category}** on "
+            f"**{repo}** errored, so the sweep cannot see what CodeQL would "
+            "have found there — which looks exactly like a clean language.",
+            "",
+            f"GitHub's error: `{error}`",
+            "",
+            "This issue closes on the next sweep once a clean analysis for "
+            "this category lands.",
         ]),
         lane=Lane.PLAN,
         labels=frozenset({label}),
