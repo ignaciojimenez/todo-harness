@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -25,6 +26,9 @@ from .models import Finding, Heartbeat
 
 Transport = Callable[[str], None]
 """Fetch a URL for its side effect. Injectable so tests need no network."""
+
+Sleep = Callable[[float], None]
+"""Wait this many seconds. Injectable so retry tests need no real time."""
 
 
 def _http_get(url: str) -> None:  # pragma: no cover - network
@@ -62,11 +66,18 @@ class HealthchecksNotifier:
     reconcile, and taking the run down because monitoring is unreachable would
     turn a monitoring outage into a work outage. The missing ping is itself the
     alert, so nothing is lost by carrying on.
+
+    A single attempt conflates "the runner is dead" with "one packet to
+    healthchecks.io got lost" — indistinguishable to healthchecks.io, which
+    has no way to tell a blip from a corpse and pages on either. `_ping`
+    retries a transient failure before giving up, so the dead-man's switch
+    only fires on the thing it exists to catch.
     """
 
     ping_url: str
     inner: _Inner = field(default_factory=StdoutNotifier)
     transport: Transport = _http_get
+    sleep: Sleep = time.sleep
 
     def start(self) -> None:
         self._ping("/start")
@@ -82,17 +93,30 @@ class HealthchecksNotifier:
         print(f"run failed: {reason}", file=sys.stderr)
         self._ping("/fail")
 
+    # 3 attempts, short backoff. Cheap against the job's overall timeout,
+    # and enough to ride out a single dropped connection without turning a
+    # blip into a false DOWN alert.
+    _ping_backoffs = (1, 3)
+
     def _ping(self, suffix: str) -> None:
-        try:
-            self.transport(self.ping_url.rstrip("/") + suffix)
-        except (urllib.error.URLError, OSError) as e:
-            # Loud, but not fatal — see the class docstring. The URL is redacted
-            # because it is a credential: anyone holding it can send a fake ping
-            # and suppress the alert. Job logs on a public repo are public, and
-            # urllib errors often quote the URL they failed on.
-            detail = str(e).replace(self.ping_url, "<ping-url>")
-            print(f"heartbeat ping failed ({detail}) — the missing ping is the alert",
-                  file=sys.stderr)
+        url = self.ping_url.rstrip("/") + suffix
+        last: Exception | None = None
+        for delay in (0, *self._ping_backoffs):
+            if delay:
+                self.sleep(delay)
+            try:
+                self.transport(url)
+                return
+            except (urllib.error.URLError, OSError) as e:
+                last = e
+        # Loud, but not fatal — see the class docstring. The URL is redacted
+        # because it is a credential: anyone holding it can send a fake ping
+        # and suppress the alert. Job logs on a public repo are public, and
+        # urllib errors often quote the URL they failed on.
+        detail = str(last).replace(self.ping_url, "<ping-url>")
+        attempts = 1 + len(self._ping_backoffs)
+        print(f"heartbeat ping failed after {attempts} attempts ({detail})"
+              " — the missing ping is the alert", file=sys.stderr)
 
 
 Poster = Callable[[str, bytes], None]

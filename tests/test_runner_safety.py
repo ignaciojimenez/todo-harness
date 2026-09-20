@@ -108,9 +108,45 @@ def test_a_broken_ping_never_takes_the_run_down(capsys):
         raise OSError("dns is having a day")
 
     n = HealthchecksNotifier("https://hc.example/uuid", inner=NullNotifier(),
-                             transport=boom)
+                             transport=boom, sleep=lambda s: None)
     n.heartbeat(Heartbeat(source="x", opened=0, updated=0, closed=0))
-    assert "heartbeat ping failed" in capsys.readouterr().err
+    assert "heartbeat ping failed after 3 attempts" in capsys.readouterr().err
+
+
+def test_a_transient_ping_failure_is_retried_not_alerted(capsys):
+    """One dropped connection must not read as the runner being dead.
+
+    healthchecks.io cannot tell a blip from a corpse, so the retry has to
+    live here — a false DOWN page trains the owner to ignore real ones.
+    """
+    calls: list[str] = []
+    slept: list[float] = []
+
+    def flaky(url: str) -> None:
+        calls.append(url)
+        if len(calls) < 3:
+            raise OSError("connection reset")
+
+    n = HealthchecksNotifier("https://hc.example/uuid", inner=NullNotifier(),
+                             transport=flaky, sleep=slept.append)
+    n.heartbeat(Heartbeat(source="x", opened=0, updated=0, closed=0))
+    assert len(calls) == 3, "must retry, not give up on the first blip"
+    assert slept == [1, 3], "backs off between attempts"
+    assert capsys.readouterr().err == "", "recovered — nothing to alert on"
+
+
+def test_ping_retries_are_bounded(capsys):
+    """A genuinely dead endpoint must still give up, not retry forever."""
+    calls: list[str] = []
+
+    def boom(url: str) -> None:
+        calls.append(url)
+        raise OSError("connection refused")
+
+    n = HealthchecksNotifier("https://hc.example/uuid", inner=NullNotifier(),
+                             transport=boom, sleep=lambda s: None)
+    n.heartbeat(Heartbeat(source="x", opened=0, updated=0, closed=0))
+    assert len(calls) == 3
 
 
 def test_an_exception_mid_run_still_reports_failure():
@@ -155,7 +191,8 @@ def test_a_failed_ping_never_leaks_the_url(capsys):
     def boom(u: str) -> None:
         raise OSError(f"failed to open {u}")
 
-    HealthchecksNotifier(url, inner=NullNotifier(), transport=boom).heartbeat(
+    HealthchecksNotifier(url, inner=NullNotifier(), transport=boom,
+                          sleep=lambda s: None).heartbeat(
         Heartbeat(source="x", opened=0, updated=0, closed=0)
     )
     err = capsys.readouterr().err
