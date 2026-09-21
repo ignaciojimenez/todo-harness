@@ -2,6 +2,11 @@
 
 One-liner record of architecture/strategy calls. Newest first.
 
+## 2026-09-21
+
+- 🔴 **A source may not judge absence for a marker it did not produce.** `SecuritySource` and `OsvSource` share the `agent/sec` label by design, but each independently reconciled the *whole* labelled set against only its own findings — an issue the other source opened was invisible and read as "no longer reported". Fired for real: three CodeQL-gap issues opened by `SecuritySource` were proposed `MarkAbsent` by `OsvSource` on the next sweep, turning 3 real updates into 6 net actions and tripping `--max-actions 5`. Each source now filters the managed set to markers it could have produced (`github.com` vs `osv.dev` host) before reconciling.
+- **The dead-man's switch fails on `Heartbeat.failed`, not on `errors > 0`.** A source's transient scan gap (one repo's SBOM fetch 500ing) is real and belongs in the run's notes, but it is self-healing — usually gone next sweep. Routing every `errors > 0` to `/fail` meant ~30% of scheduled runs over five days pinged the dead-man's switch, which made it unsafe to point that Slack integration at an actionable paging channel: 3–4 down/up cycles a week from noise alone would drown out the one incident that mattered. Now only the circuit breaker refusing to apply, or a PAGE finding that failed to send — neither of which fixes itself by waiting — sets `failed`.
+
 ## 2026-09-19
 
 - **A project is named when its name appears as written — case-sensitive.** Case-insensitive matching read the common noun "fleet" as the `Fleet` project: a backtest of the rule over all 77 PER issues gave 11 wrong single matches against 8 right, eight of them `Fleet`. Now 4 wrong, 7 right. Two lowercase mentions no longer match and stay untriaged, which is the safe side: a misfiled issue leaves the untriaged query for good. The remaining misses are repos cited as examples, which text cannot tell from ownership.
