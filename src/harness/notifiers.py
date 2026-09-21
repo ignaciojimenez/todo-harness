@@ -62,6 +62,13 @@ class HealthchecksNotifier:
     when it did not. Silence then means the runner itself is gone, which is the
     one failure a self-report can never cover.
 
+    🔴 `/fail` follows `hb.failed`, not `hb.errors`. A source's transient scan
+    gap is a real error and is reported in the run's own notes, but it is
+    self-healing and this ping's Slack integration is wired to a channel meant
+    to be actionable — flipping the switch for something that clears itself
+    next sweep is exactly the fatigue that turns a real page into background
+    noise. See `Heartbeat.failed`.
+
     A failed ping is reported loudly but never raises: the sweep's job is to
     reconcile, and taking the run down because monitoring is unreachable would
     turn a monitoring outage into a work outage. The missing ping is itself the
@@ -84,7 +91,7 @@ class HealthchecksNotifier:
 
     def heartbeat(self, hb: Heartbeat) -> None:
         self.inner.heartbeat(hb)
-        self._ping("/fail" if hb.errors else "")
+        self._ping("/fail" if hb.failed else "")
 
     def page(self, finding: Finding) -> None:
         self.inner.page(finding)

@@ -199,6 +199,12 @@ class Heartbeat:
     untriaged issues and repositories do not add up to anything, and a total
     lets one busy source hide another that saw nothing."""
     errors: int = 0
+    failed: bool = False
+    """Whether the dead-man's switch should fire. Deliberately not `errors > 0`:
+    a source's transient scan gap is reported here for a human to read, but it
+    is self-healing — the next sweep usually clears it on its own. What should
+    actually page is the run refusing to act (the circuit breaker) or a PAGE
+    finding that failed to send, neither of which fixes itself by waiting."""
 
     def line(self) -> str:
         seen = ", ".join(f"{n} {unit}" for n, unit in self.swept) or "nothing"

@@ -91,12 +91,23 @@ def test_healthchecks_pings_start_then_success():
     assert seen == ["https://hc.example/uuid/start", "https://hc.example/uuid"]
 
 
-def test_healthchecks_reports_failure_when_the_run_had_errors():
+def test_healthchecks_reports_failure_when_the_run_failed():
     seen: list[str] = []
     n = HealthchecksNotifier("https://hc.example/uuid", inner=NullNotifier(),
                              transport=seen.append)
-    n.heartbeat(Heartbeat(source="x", opened=0, updated=0, closed=0, errors=1))
+    n.heartbeat(Heartbeat(source="x", opened=0, updated=0, closed=0, failed=True))
     assert seen == ["https://hc.example/uuid/fail"]
+
+
+def test_healthchecks_does_not_fail_on_a_soft_error():
+    """A source's transient scan gap is real and lands in the run's own notes,
+    but it is self-healing — the dead-man's switch stays quiet for it, because
+    its Slack integration is wired to a channel meant to stay actionable."""
+    seen: list[str] = []
+    n = HealthchecksNotifier("https://hc.example/uuid", inner=NullNotifier(),
+                             transport=seen.append)
+    n.heartbeat(Heartbeat(source="x", opened=0, updated=0, closed=0, errors=3))
+    assert seen == ["https://hc.example/uuid"]
 
 
 def test_a_broken_ping_never_takes_the_run_down(capsys):
@@ -231,6 +242,32 @@ def test_the_heartbeat_counts_every_source_in_its_own_unit(monkeypatch, capsys):
     assert "swept 0 untriaged, 17 repos, 61 packages" in out
 
 
+class Degraded:
+    """A source that could not see part of its estate — a transient scan
+    gap, not a structural one. Reported, but not paged: the next sweep
+    usually clears it on its own."""
+
+    failures = ["repos/o/r/dependabot/alerts → HTTP 500"]
+
+    def plan(self, tracker):
+        return []
+
+
+def test_a_source_scan_gap_is_reported_but_does_not_fail_the_run(monkeypatch):
+    """The exact production case: OSV's SBOM fetch hit a transient GitHub 500.
+    It belongs in `errors` for whoever reads the log, and must not flip the
+    dead-man's switch — that channel is meant to stay actionable, and a blip
+    that clears itself next sweep is not."""
+    from harness.runners import cli
+
+    monkeypatch.setitem(cli.SOURCES, "flaky", lambda a: Degraded())
+    n = NullNotifier()
+    assert main(["apply", "--sources", "flaky"], tracker=FakeTracker([]),
+                notifier=n) == 0
+    assert n.beats[-1].errors == 1
+    assert n.beats[-1].failed is False
+
+
 # ── pages ────────────────────────────────────────────────────────────────────
 
 
@@ -291,6 +328,7 @@ def test_a_page_that_fails_to_send_fails_the_run(monkeypatch, capsys):
     n = Broken()
     main(["apply", "--sources", "one"], tracker=FakeTracker([]), notifier=n)
     assert n.beats and n.beats[-1].errors == 1
+    assert n.beats[-1].failed, "a page that never arrived must not self-heal quietly"
     assert "PAGE NOT SENT" in capsys.readouterr().out
 
 

@@ -223,10 +223,12 @@ def main(
                 "check the source before raising the limit."
             )
             print(msg, file=sys.stderr)
-            _report(notifier, args, swept, applied=0, errors=1, note=msg)
+            _report(notifier, args, swept, applied=0, errors=1, note=msg,
+                    failed=True)
             return 2
 
         applied = 0
+        paging_failed = False
         if args.mode == "apply":
             for a in actions:
                 tracker.apply(a)
@@ -240,6 +242,7 @@ def main(
                         notifier.page(a.finding)
                     except Exception as e:  # noqa: BLE001 - reported, below
                         degraded += 1
+                        paging_failed = True
                         notes.append(f"PAGE NOT SENT  {a.finding.key} — {e}")
 
         if notes:
@@ -248,9 +251,14 @@ def main(
                 print("  " + n)
 
         # A run that could not reach part of the estate is not a healthy run,
-        # even when everything it did reach was clean.
+        # even when everything it did reach was clean — but only a page that
+        # never arrived is worth waking someone for. A source's scan gap is
+        # visible in `errors`/notes for whoever reads the log; it does not set
+        # `failed`, because it is self-healing and the dead-man's switch is
+        # wired to a channel meant to stay actionable.
         _report(notifier, args, swept, applied, errors=degraded,
-                actions=actions if args.mode == "apply" else None)
+                actions=actions if args.mode == "apply" else None,
+                failed=paging_failed)
         return 0
     except SystemExit:
         raise
@@ -309,7 +317,8 @@ def _notes(rep, args) -> list[str]:
     return out
 
 
-def _report(notifier, args, swept, applied, errors, note=None, actions=None):
+def _report(notifier, args, swept, applied, errors, note=None, actions=None,
+            failed=False):
     hb = Heartbeat(
         source=args.sources,
         swept=tuple(swept),
@@ -317,6 +326,7 @@ def _report(notifier, args, swept, applied, errors, note=None, actions=None):
         updated=applied,
         closed=sum(isinstance(a, Close) for a in (actions or ())),
         errors=errors,
+        failed=failed,
     )
     notifier.heartbeat(hb)
 
