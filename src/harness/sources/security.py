@@ -389,9 +389,12 @@ class SecuritySource:
     def plan(self, tracker: Tracker) -> Iterable[Action]:
         from datetime import datetime, timedelta, timezone
 
-        managed = tracker.list_issues(
-            IssueQuery(open_only=True, label=self.managed_label)
-        )
+        managed = [
+            i for i in tracker.list_issues(
+                IssueQuery(open_only=True, label=self.managed_label)
+            )
+            if _ours(i.key)
+        ]
         policy = Policy(
             managed_label=self.managed_label,
             close_after=timedelta(hours=self.close_after_hours),
@@ -404,6 +407,19 @@ class SecuritySource:
         )
         self.report = result
         return result.actions
+
+
+def _ours(key: str | None) -> bool:
+    """Whether a marker could be this source's own.
+
+    `agent/sec` is shared with `OsvSource` — the same label covering the same
+    problem from two angles. Without this, an issue OSV opened is invisible to
+    this source's findings and reads as "no longer reported", marking it
+    absent on the very next sweep it shares the label with. An issue with no
+    marker at all is left in either way, so the "adopted by hand" detection in
+    `reconcile()` still sees it.
+    """
+    return key is None or urllib.parse.urlsplit(key).hostname == "github.com"
 
 
 def _message(e: urllib.error.HTTPError) -> str:

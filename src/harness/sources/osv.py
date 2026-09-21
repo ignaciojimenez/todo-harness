@@ -302,9 +302,12 @@ class OsvSource:
     def plan(self, tracker: Tracker) -> Iterable[Action]:
         from datetime import datetime, timedelta, timezone
 
-        managed = tracker.list_issues(
-            IssueQuery(open_only=True, label=self.managed_label)
-        )
+        managed = [
+            i for i in tracker.list_issues(
+                IssueQuery(open_only=True, label=self.managed_label)
+            )
+            if _ours(i.key)
+        ]
         result = reconcile(
             self.findings(),
             managed,
@@ -318,6 +321,15 @@ class OsvSource:
         )
         self.report = result
         return result.actions
+
+
+def _ours(key: str | None) -> bool:
+    """Mirror of `SecuritySource._ours` — see there for why this exists.
+
+    `agent/sec` is shared with `SecuritySource`; a GitHub-alert marker seen
+    here is not one of this source's findings and must not be judged absent.
+    """
+    return key is None or urllib.parse.urlsplit(key).hostname == "osv.dev"
 
 
 def marker_url(d: Dep) -> str:
