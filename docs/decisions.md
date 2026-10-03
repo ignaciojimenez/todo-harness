@@ -2,6 +2,10 @@
 
 One-liner record of architecture/strategy calls. Newest first.
 
+## 2026-10-03
+
+- **The dead-man's switch is sized to GitHub's scheduler, not to the cron line: Period 6h, Grace 6h.** Measured over 73 scheduled runs (PER-91): GitHub starts each run 4–5h late, and since 2026-09-28 it drops one of the four daily slots, so the longest gap is 9.7h. With the previous ~2h grace, the check paged `#home-alerts` every night at about 8h and cleared itself on the next run. A dedicated scheduler (a Cloudflare cron calling `workflow_dispatch`) would deliver a true 6h cadence, but it was rejected as too much machinery for a sweep whose findings are not minute-sensitive. The cadence is "about every 6–10h, best effort". The switch now fires after 12h with no ping: still within one missed run, and 2.3h above the worst gap seen. If gaps grow past that, it pages, and that is correct.
+
 ## 2026-09-21
 
 - 🔴 **A source may not judge absence for a marker it did not produce.** `SecuritySource` and `OsvSource` share the `agent/sec` label by design, but each independently reconciled the *whole* labelled set against only its own findings — an issue the other source opened was invisible and read as "no longer reported". Fired for real: three CodeQL-gap issues opened by `SecuritySource` were proposed `MarkAbsent` by `OsvSource` on the next sweep, turning 3 real updates into 6 net actions and tripping `--max-actions 5`. Each source now filters the managed set to markers it could have produced (`github.com` vs `osv.dev` host) before reconciling.
