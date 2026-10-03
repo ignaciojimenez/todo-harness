@@ -16,7 +16,9 @@ on:
   schedule:
     # Four times a day, deliberately not on the hour: GitHub's own docs name
     # "the start of every hour" as a high-load period where scheduled events
-    # are delayed.
+    # are delayed. Measured anyway: runs start 4-5h late and one slot a day
+    # can be dropped. The healthchecks.io grace is sized to that, not to this
+    # line (docs/decisions.md, 2026-10-03).
     - cron: "17 */6 * * *"
   workflow_dispatch:
     inputs:
