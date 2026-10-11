@@ -1,0 +1,443 @@
+[
+  {
+    "ref": "refs/heads/master",
+    "commit_sha": "41c71531cb09bdf40beb1366f28bcb65ac9aacb6",
+    "analysis_key": "dynamic/github-code-scanning/codeql:analyze",
+    "environment": "{\"build-mode\":\"none\",\"category\":\"/language:actions\",\"language\":\"actions\",\"runner\":\"[\\\"ubuntu-latest\\\"]\"}",
+    "category": "/language:actions",
+    "error": "",
+    "created_at": "2026-10-11T09:20:24Z",
+    "results_count": 0,
+    "rules_count": 17,
+    "id": 1931127506,
+    "url": "https://api.github.com/repos/ignaciojimenez/dotfiles/code-scanning/analyses/1931127506",
+    "sarif_id": "fd19be04-c554-11f1-9141-10fab7ae58a7",
+    "tool": {
+      "name": "CodeQL",
+      "guid": null,
+      "version": "2.27.2"
+    },
+    "deletable": true,
+    "warning": ""
+  },
+  {
+    "ref": "refs/heads/master",
+    "commit_sha": "1eebbe67e308b1a7fc455886e52a7233248242f4",
+    "analysis_key": "dynamic/github-code-scanning/codeql:analyze",
+    "environment": "{\"build-mode\":\"none\",\"category\":\"/language:actions\",\"language\":\"actions\",\"runner\":\"[\\\"ubuntu-latest\\\"]\"}",
+    "category": "/language:actions",
+    "error": "",
+    "created_at": "2026-10-08T10:05:16Z",
+    "results_count": 0,
+    "rules_count": 17,
+    "id": 1914847756,
+    "url": "https://api.github.com/repos/ignaciojimenez/dotfiles/code-scanning/analyses/1914847756",
+    "sarif_id": "c280296a-c2ff-11f1-8836-caec87bf5cf2",
+    "tool": {
+      "name": "CodeQL",
+      "guid": null,
+      "version": "2.27.1"
+    },
+    "deletable": false,
+    "warning": ""
+  },
+  {
+    "ref": "refs/heads/master",
+    "commit_sha": "1eebbe67e308b1a7fc455886e52a7233248242f4",
+    "analysis_key": "dynamic/github-code-scanning/codeql:analyze",
+    "environment": "{\"build-mode\":\"none\",\"category\":\"/language:actions\",\"language\":\"actions\",\"runner\":\"[\\\"ubuntu-latest\\\"]\"}",
+    "category": "/language:actions",
+    "error": "",
+    "created_at": "2026-10-04T20:31:25Z",
+    "results_count": 0,
+    "rules_count": 17,
+    "id": 1889708375,
+    "url": "https://api.github.com/repos/ignaciojimenez/dotfiles/code-scanning/analyses/1889708375",
+    "sarif_id": "9162c434-c032-11f1-80dd-0c727ce881e4",
+    "tool": {
+      "name": "CodeQL",
+      "guid": null,
+      "version": "2.27.1"
+    },
+    "deletable": false,
+    "warning": ""
+  },
+  {
+    "ref": "refs/heads/master",
+    "commit_sha": "a741c8cfd5f7feb00c504489be22d5125a79329e",
+    "analysis_key": "dynamic/github-code-scanning/codeql:analyze",
+    "environment": "{\"build-mode\":\"none\",\"category\":\"/language:actions\",\"language\":\"actions\",\"runner\":\"[\\\"ubuntu-latest\\\"]\"}",
+    "category": "/language:actions",
+    "error": "",
+    "created_at": "2026-10-04T18:57:05Z",
+    "results_count": 0,
+    "rules_count": 17,
+    "id": 1889497767,
+    "url": "https://api.github.com/repos/ignaciojimenez/dotfiles/code-scanning/analyses/1889497767",
+    "sarif_id": "63a24202-c025-11f1-9a46-42c845c11c2d",
+    "tool": {
+      "name": "CodeQL",
+      "guid": null,
+      "version": "2.27.1"
+    },
+    "deletable": false,
+    "warning": ""
+  },
+  {
+    "ref": "refs/heads/master",
+    "commit_sha": "72818b6fbdaf25d1848a5e1ec3dd2761ef9f0307",
+    "analysis_key": "dynamic/github-code-scanning/codeql:analyze",
+    "environment": "{\"build-mode\":\"none\",\"category\":\"/language:actions\",\"language\":\"actions\",\"runner\":\"[\\\"ubuntu-latest\\\"]\"}",
+    "category": "/language:actions",
+    "error": "",
+    "created_at": "2026-10-04T18:48:29Z",
+    "results_count": 0,
+    "rules_count": 17,
+    "id": 1889479414,
+    "url": "https://api.github.com/repos/ignaciojimenez/dotfiles/code-scanning/analyses/1889479414",
+    "sarif_id": "308e9056-c024-11f1-8e11-5eef029f4bb9",
+    "tool": {
+      "name": "CodeQL",
+      "guid": null,
+      "version": "2.27.1"
+    },
+    "deletable": false,
+    "warning": ""
+  },
+  {
+    "ref": "refs/heads/master",
+    "commit_sha": "e82994b7f38e5321e3d3f9af1733835c224c6fb7",
+    "analysis_key": "dynamic/github-code-scanning/codeql:analyze",
+    "environment": "{\"build-mode\":\"none\",\"category\":\"/language:actions\",\"language\":\"actions\",\"runner\":\"[\\\"ubuntu-latest\\\"]\"}",
+    "category": "/language:actions",
+    "error": "",
+    "created_at": "2026-10-04T18:41:05Z",
+    "results_count": 0,
+    "rules_count": 17,
+    "id": 1889462410,
+    "url": "https://api.github.com/repos/ignaciojimenez/dotfiles/code-scanning/analyses/1889462410",
+    "sarif_id": "278c90d0-c023-11f1-9610-fd59dc760c80",
+    "tool": {
+      "name": "CodeQL",
+      "guid": null,
+      "version": "2.27.1"
+    },
+    "deletable": false,
+    "warning": ""
+  },
+  {
+    "ref": "refs/heads/master",
+    "commit_sha": "8bded278acf5dcf6aefe1e4f2f001fb696805554",
+    "analysis_key": "dynamic/github-code-scanning/codeql:analyze",
+    "environment": "{\"build-mode\":\"none\",\"category\":\"/language:actions\",\"language\":\"actions\",\"runner\":\"[\\\"ubuntu-latest\\\"]\"}",
+    "category": "/language:actions",
+    "error": "",
+    "created_at": "2026-10-04T17:47:16Z",
+    "results_count": 0,
+    "rules_count": 17,
+    "id": 1889343059,
+    "url": "https://api.github.com/repos/ignaciojimenez/dotfiles/code-scanning/analyses/1889343059",
+    "sarif_id": "a37c2dde-c01b-11f1-8be8-ed80ed84250c",
+    "tool": {
+      "name": "CodeQL",
+      "guid": null,
+      "version": "2.27.1"
+    },
+    "deletable": false,
+    "warning": ""
+  },
+  {
+    "ref": "refs/heads/master",
+    "commit_sha": "70bcea4665015d3feca49fb3505c4bcb51b17e10",
+    "analysis_key": "dynamic/github-code-scanning/codeql:analyze",
+    "environment": "{\"build-mode\":\"none\",\"category\":\"/language:actions\",\"language\":\"actions\",\"runner\":\"[\\\"ubuntu-latest\\\"]\"}",
+    "category": "/language:actions",
+    "error": "",
+    "created_at": "2026-10-04T10:55:32Z",
+    "results_count": 0,
+    "rules_count": 17,
+    "id": 1888464677,
+    "url": "https://api.github.com/repos/ignaciojimenez/dotfiles/code-scanning/analyses/1888464677",
+    "sarif_id": "1e8111f0-bfe2-11f1-8d33-6c1a5013f86f",
+    "tool": {
+      "name": "CodeQL",
+      "guid": null,
+      "version": "2.27.1"
+    },
+    "deletable": false,
+    "warning": ""
+  },
+  {
+    "ref": "refs/heads/master",
+    "commit_sha": "9624009c14bf1ebf8807909e2cbf4ae01be4dbcf",
+    "analysis_key": "dynamic/github-code-scanning/codeql:analyze",
+    "environment": "{\"build-mode\":\"none\",\"category\":\"/language:actions\",\"language\":\"actions\",\"runner\":\"[\\\"ubuntu-latest\\\"]\"}",
+    "category": "/language:actions",
+    "error": "",
+    "created_at": "2026-09-24T10:08:24Z",
+    "results_count": 0,
+    "rules_count": 17,
+    "id": 1831571448,
+    "url": "https://api.github.com/repos/ignaciojimenez/dotfiles/code-scanning/analyses/1831571448",
+    "sarif_id": "e084a054-b7ff-11f1-939f-5d8ecd93930d",
+    "tool": {
+      "name": "CodeQL",
+      "guid": null,
+      "version": "2.27.0"
+    },
+    "deletable": false,
+    "warning": ""
+  },
+  {
+    "ref": "refs/heads/master",
+    "commit_sha": "9624009c14bf1ebf8807909e2cbf4ae01be4dbcf",
+    "analysis_key": "dynamic/github-code-scanning/codeql:analyze",
+    "environment": "{\"build-mode\":\"none\",\"category\":\"/language:actions\",\"language\":\"actions\",\"runner\":\"[\\\"ubuntu-latest\\\"]\"}",
+    "category": "/language:actions",
+    "error": "",
+    "created_at": "2026-09-20T22:56:13Z",
+    "results_count": 0,
+    "rules_count": 17,
+    "id": 1808013447,
+    "url": "https://api.github.com/repos/ignaciojimenez/dotfiles/code-scanning/analyses/1808013447",
+    "sarif_id": "7a2d5ff0-b546-11f1-8d5b-8023af88bea0",
+    "tool": {
+      "name": "CodeQL",
+      "guid": null,
+      "version": "2.27.0"
+    },
+    "deletable": false,
+    "warning": ""
+  },
+  {
+    "ref": "refs/heads/master",
+    "commit_sha": "5b863c5bc842844f0476279d6166bd9378824a9f",
+    "analysis_key": "dynamic/github-code-scanning/codeql:analyze",
+    "environment": "{\"build-mode\":\"none\",\"category\":\"/language:actions\",\"language\":\"actions\",\"runner\":\"[\\\"ubuntu-latest\\\"]\"}",
+    "category": "/language:actions",
+    "error": "",
+    "created_at": "2026-09-20T18:46:24Z",
+    "results_count": 0,
+    "rules_count": 17,
+    "id": 1807551797,
+    "url": "https://api.github.com/repos/ignaciojimenez/dotfiles/code-scanning/analyses/1807551797",
+    "sarif_id": "94624a98-b523-11f1-818e-fb5b120e9daa",
+    "tool": {
+      "name": "CodeQL",
+      "guid": null,
+      "version": "2.27.0"
+    },
+    "deletable": false,
+    "warning": ""
+  },
+  {
+    "ref": "refs/heads/master",
+    "commit_sha": "b95bac162e531702c9a172bbb9b5111c94da026d",
+    "analysis_key": "dynamic/github-code-scanning/codeql:analyze",
+    "environment": "{\"build-mode\":\"none\",\"category\":\"/language:actions\",\"language\":\"actions\",\"runner\":\"[\\\"ubuntu-latest\\\"]\"}",
+    "category": "/language:actions",
+    "error": "",
+    "created_at": "2026-09-20T18:42:13Z",
+    "results_count": 0,
+    "rules_count": 17,
+    "id": 1807543293,
+    "url": "https://api.github.com/repos/ignaciojimenez/dotfiles/code-scanning/analyses/1807543293",
+    "sarif_id": "feed0610-b522-11f1-8b9b-ad8627a4da34",
+    "tool": {
+      "name": "CodeQL",
+      "guid": null,
+      "version": "2.27.0"
+    },
+    "deletable": false,
+    "warning": ""
+  },
+  {
+    "ref": "refs/heads/master",
+    "commit_sha": "805aea838fc628775502e0c821c4ac94d49f79ea",
+    "analysis_key": "dynamic/github-code-scanning/codeql:analyze",
+    "environment": "{\"build-mode\":\"none\",\"category\":\"/language:actions\",\"language\":\"actions\",\"runner\":\"[\\\"ubuntu-latest\\\"]\"}",
+    "category": "/language:actions",
+    "error": "",
+    "created_at": "2026-09-20T18:24:01Z",
+    "results_count": 0,
+    "rules_count": 17,
+    "id": 1807508536,
+    "url": "https://api.github.com/repos/ignaciojimenez/dotfiles/code-scanning/analyses/1807508536",
+    "sarif_id": "73601b66-b520-11f1-8d0d-d31a70c612dc",
+    "tool": {
+      "name": "CodeQL",
+      "guid": null,
+      "version": "2.27.0"
+    },
+    "deletable": false,
+    "warning": ""
+  },
+  {
+    "ref": "refs/heads/master",
+    "commit_sha": "7251d327dc66227de2b6e9f0c31a75d80b44bfdd",
+    "analysis_key": "dynamic/github-code-scanning/codeql:analyze",
+    "environment": "{\"build-mode\":\"none\",\"category\":\"/language:actions\",\"language\":\"actions\",\"runner\":\"[\\\"ubuntu-latest\\\"]\"}",
+    "category": "/language:actions",
+    "error": "",
+    "created_at": "2026-09-20T10:48:24Z",
+    "results_count": 0,
+    "rules_count": 17,
+    "id": 1806667626,
+    "url": "https://api.github.com/repos/ignaciojimenez/dotfiles/code-scanning/analyses/1806667626",
+    "sarif_id": "cde4b6e0-b4e0-11f1-814d-bc3b3c3a7dff",
+    "tool": {
+      "name": "CodeQL",
+      "guid": null,
+      "version": "2.27.0"
+    },
+    "deletable": false,
+    "warning": ""
+  },
+  {
+    "ref": "refs/heads/master",
+    "commit_sha": "2940e8b2385ae4a69351c9e1929b6b91f7a636d8",
+    "analysis_key": "dynamic/github-code-scanning/codeql:analyze",
+    "environment": "{\"build-mode\":\"none\",\"category\":\"/language:actions\",\"language\":\"actions\",\"runner\":\"[\\\"ubuntu-latest\\\"]\"}",
+    "category": "/language:actions",
+    "error": "",
+    "created_at": "2026-09-19T17:03:39Z",
+    "results_count": 0,
+    "rules_count": 17,
+    "id": 1804796136,
+    "url": "https://api.github.com/repos/ignaciojimenez/dotfiles/code-scanning/analyses/1804796136",
+    "sarif_id": "0f46dc84-b44c-11f1-879d-d14a05df1c16",
+    "tool": {
+      "name": "CodeQL",
+      "guid": null,
+      "version": "2.27.0"
+    },
+    "deletable": false,
+    "warning": ""
+  },
+  {
+    "ref": "refs/heads/master",
+    "commit_sha": "4fc86dedbe1a6cf6e3c85ff7a9bc31ffce994f4b",
+    "analysis_key": "dynamic/github-code-scanning/codeql:analyze",
+    "environment": "{\"build-mode\":\"none\",\"category\":\"/language:actions\",\"language\":\"actions\",\"runner\":\"[\\\"ubuntu-latest\\\"]\"}",
+    "category": "/language:actions",
+    "error": "",
+    "created_at": "2026-09-19T07:55:03Z",
+    "results_count": 0,
+    "rules_count": 17,
+    "id": 1803795816,
+    "url": "https://api.github.com/repos/ignaciojimenez/dotfiles/code-scanning/analyses/1803795816",
+    "sarif_id": "6b8dcde2-b3ff-11f1-8366-91ae5e7731c9",
+    "tool": {
+      "name": "CodeQL",
+      "guid": null,
+      "version": "2.27.0"
+    },
+    "deletable": false,
+    "warning": ""
+  },
+  {
+    "ref": "refs/heads/master",
+    "commit_sha": "bc1b659c22a8dd395c670cfe9fb85ac9f17f88be",
+    "analysis_key": "dynamic/github-code-scanning/codeql:analyze",
+    "environment": "{\"build-mode\":\"none\",\"category\":\"/language:actions\",\"language\":\"actions\",\"runner\":\"[\\\"ubuntu-latest\\\"]\"}",
+    "category": "/language:actions",
+    "error": "",
+    "created_at": "2026-09-18T21:42:34Z",
+    "results_count": 0,
+    "rules_count": 17,
+    "id": 1802457161,
+    "url": "https://api.github.com/repos/ignaciojimenez/dotfiles/code-scanning/analyses/1802457161",
+    "sarif_id": "db7d4386-b3a9-11f1-97db-6788df59b090",
+    "tool": {
+      "name": "CodeQL",
+      "guid": null,
+      "version": "2.27.0"
+    },
+    "deletable": false,
+    "warning": ""
+  },
+  {
+    "ref": "refs/heads/master",
+    "commit_sha": "c922bf2c0e362e04b5e86b9f6defac7128a36bd5",
+    "analysis_key": "dynamic/github-code-scanning/codeql:analyze",
+    "environment": "{\"build-mode\":\"none\",\"category\":\"/language:actions\",\"language\":\"actions\",\"runner\":\"[\\\"ubuntu-latest\\\"]\"}",
+    "category": "/language:actions",
+    "error": "",
+    "created_at": "2026-09-18T21:09:06Z",
+    "results_count": 0,
+    "rules_count": 17,
+    "id": 1802311822,
+    "url": "https://api.github.com/repos/ignaciojimenez/dotfiles/code-scanning/analyses/1802311822",
+    "sarif_id": "2e798aea-b3a5-11f1-8e32-3205c291b2de",
+    "tool": {
+      "name": "CodeQL",
+      "guid": null,
+      "version": "2.27.0"
+    },
+    "deletable": false,
+    "warning": ""
+  },
+  {
+    "ref": "refs/heads/master",
+    "commit_sha": "e113e261416d034d7940864e468cd2d353a7b650",
+    "analysis_key": "dynamic/github-code-scanning/codeql:analyze",
+    "environment": "{\"build-mode\":\"none\",\"category\":\"/language:actions\",\"language\":\"actions\",\"runner\":\"[\\\"ubuntu-latest\\\"]\"}",
+    "category": "/language:actions",
+    "error": "",
+    "created_at": "2026-09-18T18:29:51Z",
+    "results_count": 0,
+    "rules_count": 17,
+    "id": 1801520884,
+    "url": "https://api.github.com/repos/ignaciojimenez/dotfiles/code-scanning/analyses/1801520884",
+    "sarif_id": "ef5463be-b38e-11f1-9979-a91e614f0d80",
+    "tool": {
+      "name": "CodeQL",
+      "guid": null,
+      "version": "2.27.0"
+    },
+    "deletable": false,
+    "warning": ""
+  },
+  {
+    "ref": "refs/heads/master",
+    "commit_sha": "8fbf37a7c009d5a9fe667ecd0e4960bbfb8d118e",
+    "analysis_key": "dynamic/github-code-scanning/codeql:analyze",
+    "environment": "{\"build-mode\":\"none\",\"category\":\"/language:actions\",\"language\":\"actions\",\"runner\":\"[\\\"ubuntu-latest\\\"]\"}",
+    "category": "/language:actions",
+    "error": "",
+    "created_at": "2026-09-18T18:06:00Z",
+    "results_count": 4,
+    "rules_count": 17,
+    "id": 1801393841,
+    "url": "https://api.github.com/repos/ignaciojimenez/dotfiles/code-scanning/analyses/1801393841",
+    "sarif_id": "9a745b04-b38b-11f1-9243-373514efca79",
+    "tool": {
+      "name": "CodeQL",
+      "guid": null,
+      "version": "2.27.0"
+    },
+    "deletable": false,
+    "warning": ""
+  },
+  {
+    "ref": "refs/heads/master",
+    "commit_sha": "8fbf37a7c009d5a9fe667ecd0e4960bbfb8d118e",
+    "analysis_key": "dynamic/github-code-scanning/codeql:analyze",
+    "environment": "{\"build-mode\":\"none\",\"category\":\"/language:ruby\",\"language\":\"ruby\",\"runner\":\"[\\\"ubuntu-latest\\\"]\"}",
+    "category": "/language:ruby",
+    "error": "unsuccessful execution, exit code: 0, description:  ",
+    "created_at": "2026-09-18T18:05:57Z",
+    "results_count": 0,
+    "rules_count": 0,
+    "id": 1801393584,
+    "url": "https://api.github.com/repos/ignaciojimenez/dotfiles/code-scanning/analyses/1801393584",
+    "sarif_id": "98997080-b38b-11f1-811e-3de094ea7359",
+    "tool": {
+      "name": "CodeQL",
+      "guid": null,
+      "version": "2.27.0"
+    },
+    "deletable": true,
+    "warning": ""
+  }
+]

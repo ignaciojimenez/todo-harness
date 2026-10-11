@@ -6,6 +6,10 @@ on 2026-09-13, or from a defect the prototype's backtest caught. No network.
 
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
 from harness.models import Lane
 from harness.sources.security import (
     Alert,
@@ -362,119 +366,244 @@ def test_seen_counts_the_repos_swept(monkeypatch):
 
 # ── analyses: a language CodeQL silently dropped looks exactly like clean ────
 
-# The real payload for touchid-agent's first CodeQL run, 2026-09-18: Go, Swift
-# and C each failed at least once, Ruby and Actions succeeded throughout. Only
-# `category`, `error` and `created_at` matter to the check; captured with
-# `gh api repos/ignaciojimenez/touchid-agent/code-scanning/analyses --paginate`.
-TOUCHID_FIRST_RUN = [
-    {"category": "/language:c-cpp",
-     "error": "unsuccessful execution, exit code: 0, description:  ",
-     "created_at": "2026-09-18T17:43:59Z"},
-    {"category": "/language:actions", "error": "", "created_at": "2026-09-18T17:44:04Z"},
-    {"category": "/language:go",
-     "error": "unsuccessful execution, exit code: 0, description:  ",
-     "created_at": "2026-09-18T17:44:12Z"},
-    {"category": "/language:ruby", "error": "", "created_at": "2026-09-18T17:44:27Z"},
-    {"category": "/language:swift",
-     "error": "unsuccessful execution, exit code: 0, description:  ",
-     "created_at": "2026-09-18T17:44:47Z"},
-    {"category": "/language:actions", "error": "", "created_at": "2026-09-18T17:47:14Z"},
-    {"category": "/language:actions", "error": "", "created_at": "2026-09-18T17:47:22Z"},
-    {"category": "/language:go",
-     "error": "unsuccessful execution, exit code: 0, description:  ",
-     "created_at": "2026-09-18T17:50:38Z"},
-    {"category": "/language:go",
-     "error": "unsuccessful execution, exit code: 0, description:  ",
-     "created_at": "2026-09-18T17:50:59Z"},
-    {"category": "/language:actions", "error": "", "created_at": "2026-09-18T17:52:33Z"},
-]
+# Real payloads, captured 2026-10-11 with
+# `gh api repos/ignaciojimenez/<repo>/code-scanning/analyses --paginate` and
+# `gh api repos/ignaciojimenez/<repo>/code-scanning/default-setup`.
+FIXTURES = Path(__file__).parent / "fixtures"
+TOUCHID = "ignaciojimenez/touchid-agent"
+DOTFILES = "ignaciojimenez/dotfiles"
+CAPTURED = datetime(2026, 10, 11, 19, 0, tzinfo=timezone.utc)
+BEFORE_PRS = datetime(2026, 10, 11, 18, 0, tzinfo=timezone.utc)
+"""touchid-agent's PRs #48 and #49 first scanned swift and c-cpp at 18:29.
+Sliced here, the history is the state PER-81/82 were opened against."""
+CODEQL = {"name": "CodeQL"}
+
+
+def _analyses(repo: str, before: datetime | None = None) -> list[dict]:
+    name = repo.split("/")[1]
+    rows = json.loads((FIXTURES / f"codeql-analyses-{name}.json").read_text())
+    if before is not None:
+        rows = [a for a in rows if datetime.fromisoformat(a["created_at"]) < before]
+    return rows
+
+
+def _gaps(repo, analyses, branch, now):
+    from harness.sources.security import _coverage
+
+    return {g.category: g for g in _coverage(repo, analyses, branch, now)}
 
 
 def test_the_touchid_agent_first_run_flags_go_swift_and_c():
     """Go, Swift and C failed and were silently dropped; Ruby and Actions ran
-    clean throughout and must not be flagged."""
-    from harness.sources.security import _analysis_errors
+    clean and must not be flagged. Judged as the sweep saw it that evening."""
+    first_run = _analyses(TOUCHID, before=datetime(2026, 9, 18, 17, 53, tzinfo=timezone.utc))
+    gaps = _gaps(TOUCHID, first_run, "main", datetime(2026, 9, 18, 18, 0, tzinfo=timezone.utc))
+    assert set(gaps) == {"/language:go", "/language:swift", "/language:c-cpp"}
+    assert not any(g.stale for g in gaps.values())
+    assert "unsuccessful execution" in gaps["/language:go"].error
 
-    errors = dict(_analysis_errors(TOUCHID_FIRST_RUN))
-    assert set(errors) == {"/language:go", "/language:swift", "/language:c-cpp"}
-    assert "unsuccessful execution" in errors["/language:go"]
+
+def test_dropped_languages_are_not_scanned_since_the_day_they_failed():
+    """Bug 1. Before the PRs, swift and c-cpp last ran on `main` on 2026-09-18,
+    failed, and the new workflow never produced them again. "Latest ever"
+    called them failing for three weeks, with a close condition — a clean
+    rerun — that the config could never deliver."""
+    gaps = _gaps(TOUCHID, _analyses(TOUCHID, before=BEFORE_PRS), "main", BEFORE_PRS)
+    for lang in ("swift", "c-cpp"):
+        g = gaps[f"/language:{lang}"]
+        assert g.stale and f"{g.last:%Y-%m-%d}" == "2026-09-18"
+    # Ruby ran clean once and was dropped in the same switch: still uncovered.
+    assert gaps["/language:ruby"].stale
+    # Still produced, latest clean: covered.
+    assert "/language:go" not in gaps and "/language:actions" not in gaps
+
+
+def test_clean_pull_request_runs_are_not_coverage():
+    """Bug 2. Every clean swift and c-cpp analysis in the history is on
+    `refs/pull/48/merge` or `refs/pull/49/merge`; `main` still does not scan
+    swift. Counting them would close PER-81/82 on a proposal."""
+    rows = _analyses(TOUCHID)
+    clean = {a["ref"] for a in rows
+             if a["category"] in {"/language:swift", "/language:c-cpp"} and not a["error"]}
+    assert clean == {"refs/pull/48/merge", "refs/pull/49/merge"}  # the premise
+
+    gaps = _gaps(TOUCHID, rows, "main", CAPTURED)
+    for lang in ("swift", "c-cpp"):
+        g = gaps[f"/language:{lang}"]
+        assert g.stale and f"{g.last:%Y-%m-%d}" == "2026-09-18"
+
+
+def test_failed_pull_request_runs_open_nothing():
+    """The other direction: PRs #45 and #46 failed go and actions on
+    2026-10-03 while `main` stayed clean. A PR ref never opens anything."""
+    rows = _analyses(TOUCHID)
+    assert any(a["error"] and a["ref"].startswith("refs/pull/") for a in rows)
+    gaps = _gaps(TOUCHID, rows, "main", CAPTURED)
+    assert "/language:go" not in gaps and "/language:actions" not in gaps
+
+
+def test_a_planted_failure_of_a_produced_language_is_still_failing():
+    """The fix must not turn real failures into staleness or silence. dotfiles
+    runs actions on `master` constantly; make the newest one fail."""
+    rows = _analyses(DOTFILES) + [{
+        "tool": CODEQL, "ref": "refs/heads/master", "category": "/language:actions",
+        "error": "unsuccessful execution, exit code: 32",
+        "created_at": "2026-10-11T18:30:00Z",
+    }]
+    g = _gaps(DOTFILES, rows, "master", CAPTURED)["/language:actions"]
+    assert not g.stale and "exit code: 32" in g.error
+
+
+def test_the_default_branch_is_whatever_the_repo_says():
+    """dotfiles' default branch is `master`. Hardcoding `main` would find no
+    analyses at all, which reads as "code scanning off" — quiet, and wrong."""
+    rows = _analyses(DOTFILES)
+    assert _gaps(DOTFILES, rows, "main", CAPTURED) == {}
+    assert set(_gaps(DOTFILES, rows, "master", CAPTURED)) == {"/language:ruby"}
+
+
+def test_staleness_agrees_with_default_setup_where_that_is_the_config():
+    """A cross-check against GitHub's own answer. dotfiles uses default setup,
+    whose `languages` is the configured set; the history-derived rule must
+    call exactly the rest stale. (touchid-agent uses a workflow, so its
+    default-setup `languages` is not its config and proves nothing.)"""
+    setup = json.loads((FIXTURES / "codeql-default-setup-dotfiles.json").read_text())
+    assert setup["state"] == "configured"
+    rows = _analyses(DOTFILES)
+    produced = {a["category"] for a in rows}
+    stale = {c for c, g in _gaps(DOTFILES, rows, "master", CAPTURED).items() if g.stale}
+    assert stale == produced - {f"/language:{lang}" for lang in setup["languages"]}
+
+
+def test_a_run_still_uploading_does_not_read_as_dropping_languages():
+    """A sweep can land mid-run: actions uploaded, go not yet. Without the
+    settle window, go — clean, and about to be re-analysed — would flip to
+    stale and open an issue that closes a day later."""
+    rows = _analyses(TOUCHID) + [{
+        "tool": CODEQL, "ref": "refs/heads/main", "category": "/language:actions", "error": "",
+        "created_at": "2026-10-20T12:00:00Z",
+    }]
+    mid_run = datetime(2026, 10, 20, 12, 5, tzinfo=timezone.utc)
+    assert "/language:go" not in _gaps(TOUCHID, rows, "main", mid_run)
+    # …but a run that had a day to finish and still did not produce go has
+    # dropped it.
+    later = datetime(2026, 10, 21, 13, 0, tzinfo=timezone.utc)
+    assert _gaps(TOUCHID, rows, "main", later)["/language:go"].stale
+
+
+def test_a_dormant_repo_is_not_stale():
+    """Measured against the repo's own runs, not the clock: nobody pushing for
+    a year leaves every category as covered as its last run."""
+    rows = _analyses(DOTFILES)
+    years_later = datetime(2027, 10, 11, tzinfo=timezone.utc)
+    assert set(_gaps(DOTFILES, rows, "master", years_later)) == {"/language:ruby"}
+
+
+def test_other_sarif_tools_are_not_codeql_languages():
+    """cobra's OSSAR workflow uploaded to the same endpoint until 2024. A stale
+    category from another tool is not a CodeQL language, and calling it one
+    would put a false title on a real issue."""
+    rows = _analyses(DOTFILES) + [{
+        "tool": {"name": "OSSAR"}, "ref": "refs/heads/master",
+        "category": ".github/workflows/ossar-analysis.yml:OSSAR-Scan",
+        "error": "", "created_at": "2026-09-01T10:00:00Z",
+    }]
+    assert set(_gaps(DOTFILES, rows, "master", CAPTURED)) == {"/language:ruby"}
 
 
 def test_a_later_clean_rerun_clears_the_gap():
-    """Only the *latest* analysis per category counts — a fixed rerun (the real
-    Go rerun at 17:57:09, after this fixture) must stop the finding without
-    touching Swift or C, which never got one."""
-    from harness.sources.security import _analysis_errors
-
-    fixed = TOUCHID_FIRST_RUN + [
-        {"category": "/language:go", "error": "", "created_at": "2026-09-18T17:57:09Z"},
-    ]
-    errors = dict(_analysis_errors(fixed))
-    assert "/language:go" not in errors
-    assert {"/language:swift", "/language:c-cpp"} <= set(errors)
+    """Only the *latest* analysis per category counts — the real Go rerun at
+    17:57:09 must stop the finding without touching Swift or C."""
+    rows = _analyses(TOUCHID, before=datetime(2026, 9, 18, 17, 58, tzinfo=timezone.utc))
+    gaps = _gaps(TOUCHID, rows, "main", datetime(2026, 9, 18, 18, 0, tzinfo=timezone.utc))
+    assert "/language:go" not in gaps
+    assert {"/language:swift", "/language:c-cpp"} <= set(gaps)
 
 
 def test_latest_is_by_timestamp_not_list_order():
     """A failed rerun and its fix can land in either order within one page."""
-    from harness.sources.security import _analysis_errors
-
     out_of_order = [
-        {"category": "/language:go", "error": "unsuccessful execution",
-         "created_at": "2026-09-18T18:00:00Z"},
-        {"category": "/language:go", "error": "", "created_at": "2026-09-18T17:00:00Z"},
+        {"tool": CODEQL, "ref": "refs/heads/main", "category": "/language:go",
+         "error": "unsuccessful execution", "created_at": "2026-09-18T18:00:00Z"},
+        {"tool": CODEQL, "ref": "refs/heads/main", "category": "/language:go", "error": "",
+         "created_at": "2026-09-18T17:00:00Z"},
     ]
-    assert dict(_analysis_errors(out_of_order))["/language:go"] == "unsuccessful execution"
+    g = _gaps(TOUCHID, out_of_order, "main", CAPTURED)["/language:go"]
+    assert g.error == "unsuccessful execution"
 
 
 def test_no_analyses_is_not_a_gap():
     """Code scanning off entirely (a 404) is optional and must stay quiet —
     same rule as the alerts endpoint."""
-    from harness.sources.security import _analysis_errors
-
-    assert _analysis_errors([]) == []
+    assert _gaps(TOUCHID, [], "main", CAPTURED) == {}
 
 
-def test_analysis_gap_becomes_a_plan_finding():
+def test_stale_and_failing_findings_say_different_things():
+    by_cat = _gaps(TOUCHID, _analyses(TOUCHID), "main", CAPTURED)
     from harness.sources.security import _analysis_gap_finding
 
-    f = _analysis_gap_finding(
-        "ignaciojimenez/touchid-agent", "/language:go",
-        "unsuccessful execution, exit code: 0, description:  ", "agent/sec",
+    stale = _analysis_gap_finding(by_cat["/language:swift"], "agent/sec")
+    assert stale.lane is Lane.PLAN
+    assert stale.title == "CodeQL swift not scanned in touchid-agent since 2026-09-18"
+    assert "`main`" in stale.body and "confirm_delete" in stale.body
+
+    rows = _analyses(DOTFILES) + [{
+        "tool": CODEQL, "ref": "refs/heads/master", "category": "/language:actions",
+        "error": "boom", "created_at": "2026-10-11T18:30:00Z",
+    }]
+    failing = _analysis_gap_finding(
+        _gaps(DOTFILES, rows, "master", CAPTURED)["/language:actions"], "agent/sec")
+    assert failing.title == "CodeQL actions analysis is failing in dotfiles"
+    assert "`boom`" in failing.body and "`master`" in failing.body
+
+
+def test_the_key_survives_failing_becoming_stale():
+    """PER-81 was opened as failing and is now stale. One condition, one key —
+    and the very URL already attached to PER-81, so the fix re-matches the
+    existing issue instead of opening a duplicate."""
+    from harness.sources.security import _analysis_gap_finding
+
+    then = _gaps(TOUCHID, _analyses(TOUCHID, before=datetime(2026, 9, 18, 17, 53, tzinfo=timezone.utc)),
+                 "main", datetime(2026, 9, 18, 18, 0, tzinfo=timezone.utc))["/language:swift"]
+    now = _gaps(TOUCHID, _analyses(TOUCHID), "main", CAPTURED)["/language:swift"]
+    assert not then.stale and now.stale
+    a, b = (_analysis_gap_finding(g, "agent/sec") for g in (then, now))
+    assert a.key == b.key == (
+        "https://github.com/ignaciojimenez/touchid-agent/security/code-scanning#language:swift"
     )
-    assert f.lane is Lane.PLAN
-    assert "go" in f.title.lower() and "touchid-agent" in f.title
-    assert f.key == "https://github.com/ignaciojimenez/touchid-agent/security/code-scanning#language:go"
-    assert "unsuccessful execution" in f.body
-
-
-def test_analysis_gap_key_is_stable_across_repeated_failures():
-    """The key must not embed the analysis id or timestamp — every failed
-    rerun of the same language must map to the same issue, not a new one."""
-    from harness.sources.security import _analysis_gap_finding
-
-    a = _analysis_gap_finding("o/r", "/language:go", "err one", "agent/sec")
-    b = _analysis_gap_finding("o/r", "/language:go", "err two", "agent/sec")
-    assert a.key == b.key
 
 
 ANALYSES = "repos/ignaciojimenez/touchid-agent/code-scanning/analyses?per_page=100"
+REPOS = f"{API}/users/ignaciojimenez/repos?per_page=100"
 
 
-def test_a_failed_analysis_is_collected_during_the_sweep(monkeypatch):
-    """End to end: `alerts()` walks each repo's analyses, not just its alerts,
-    and records the gap the same way a disabled scanner is recorded."""
+def test_the_sweep_judges_each_repo_on_its_listed_default_branch(monkeypatch):
+    """End to end: `alerts()` takes the branch from the repo listing and
+    records stale and failing gaps the same way a disabled scanner is."""
     from harness.sources.security import SecuritySource
 
     _serve(monkeypatch, {
-        f"{API}/users/ignaciojimenez/repos?per_page=100":
-            ([{"name": "touchid-agent"}], None),
-        f"{API}/{ANALYSES}": (TOUCHID_FIRST_RUN, None),
+        REPOS: ([{"name": "touchid-agent", "default_branch": "main"}], None),
+        f"{API}/{ANALYSES}": (_analyses(TOUCHID), None),
     })
     src = SecuritySource(owner="ignaciojimenez", token="t")
     src.alerts()
-    gaps = {(repo, cat) for repo, cat, _ in src.analysis_gaps}
+    gaps = {(g.repo, g.category, g.stale) for g in src.analysis_gaps}
     assert gaps == {
-        ("ignaciojimenez/touchid-agent", "/language:go"),
-        ("ignaciojimenez/touchid-agent", "/language:swift"),
-        ("ignaciojimenez/touchid-agent", "/language:c-cpp"),
+        (TOUCHID, "/language:swift", True),
+        (TOUCHID, "/language:c-cpp", True),
+        (TOUCHID, "/language:ruby", True),
     }
+
+
+def test_a_repo_without_a_default_branch_is_unscanned_not_clean(monkeypatch):
+    from harness.sources.security import SecuritySource
+
+    _serve(monkeypatch, {
+        REPOS: ([{"name": "touchid-agent"}], None),
+        f"{API}/{ANALYSES}": (_analyses(TOUCHID), None),
+    })
+    src = SecuritySource(owner="ignaciojimenez", token="t")
+    src.alerts()
+    assert not src.analysis_gaps
+    assert any("no default branch" in f for f in src.failures)
