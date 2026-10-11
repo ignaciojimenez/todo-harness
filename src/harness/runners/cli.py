@@ -208,8 +208,10 @@ def main(
                 notes.append(sup)
             for purl in getattr(source, "skipped", ()):
                 notes.append(f"UNSCANNED  {purl}")
-            for alert, why in getattr(source, "silent", ()):
-                notes.append(f"{alert.repo} #{alert.number}  silent — {why}")
+            for item, why in getattr(source, "silent", ()):
+                # An alert has a number; an OSV dependency has only a name.
+                ref = f"#{item.number}" if hasattr(item, "number") else item.name
+                notes.append(f"{item.repo} {ref}  silent — {why}")
 
         for a in actions:
             print(("      " if args.mode == "plan" else "APPLY ") + describe(a))
