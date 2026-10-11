@@ -26,6 +26,7 @@ import urllib.parse
 import urllib.request
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import Iterable
 
 from ..models import Action, Finding, IssueQuery, Lane
@@ -68,6 +69,13 @@ checking rather than assuming when adding a repo.
 
 EPSS_PAGE_PERCENTILE = 0.90
 """Above this, "someone is actively exploiting this" outweighs a dev-only scope."""
+
+ANALYSIS_SETTLE = timedelta(hours=24)
+"""How long a CodeQL run gets to upload all its categories before a category it
+did not upload counts as dropped. One run's categories land within about ten
+minutes of each other in every run captured so far, so this is generous. It
+only delays noticing a config change by a day, and the sweep runs at that pace
+anyway. See `_coverage()`."""
 
 
 def exposure_of(repo: str, path: str | None) -> str:
@@ -205,12 +213,17 @@ class SecuritySource:
     a repo nobody scans looks exactly like a clean one, and a new repo starts
     unscanned unless someone remembers. Re-enabling it closes the issue."""
 
-    analysis_gaps: list[tuple[str, str, str]] = field(default_factory=list)
-    """(repo, category, error) for each CodeQL language whose *latest* analysis
-    errored. Default setup drops a failed language and still reports the run a
-    success — touchid-agent's first run left Go, Swift and C unscanned with
-    only Ruby and Actions actually covered. Same shape as `gaps`: a 404 here
-    means code scanning is off entirely, which is optional and stays quiet."""
+    analysis_gaps: list[CoverageGap] = field(default_factory=list)
+    """CodeQL categories the repo's default branch is not covered by: the latest
+    analysis errored, or the current config stopped producing it. Default
+    setup drops a failed language and still reports the run a success —
+    touchid-agent's first run left Go, Swift and C unscanned with only Ruby
+    and Actions actually covered. Same shape as `gaps`: a 404 here means code
+    scanning is off entirely, which is optional and stays quiet."""
+
+    default_branches: dict[str, str] = field(default_factory=dict)
+    """Repo name → default branch, from the repo listing. Coverage is judged
+    there and only there; see `_coverage()`."""
 
     silent: list[tuple[Alert, str]] = field(default_factory=list)
     """Routed away. Never an issue; printed so what was swallowed is arguable."""
@@ -300,11 +313,14 @@ class SecuritySource:
         complete sweep it marks every open issue absent — closed a day later,
         on no evidence at all. So it marks the sweep incomplete instead."""
         before = len(self.failures)
-        names = [
-            r["name"]
-            for r in self._get(f"users/{self.owner}/repos?per_page=100")
+        live = [
+            r for r in self._get(f"users/{self.owner}/repos?per_page=100")
             if not r.get("archived")
         ]
+        names = [r["name"] for r in live]
+        self.default_branches = {
+            r["name"]: r["default_branch"] for r in live if r.get("default_branch")
+        }
         if not names and len(self.failures) == before:
             self.failures.append(
                 f"users/{self.owner}/repos → no repositories to sweep; a wrong "
@@ -341,9 +357,7 @@ class SecuritySource:
                     severity=rule.get("security_severity_level") or rule.get("severity"),
                     path=loc.get("path"),
                 ))
-            analyses = self._get(f"repos/{repo}/code-scanning/analyses?per_page=100")
-            for category, error in _analysis_errors(analyses):
-                self.analysis_gaps.append((repo, category, error))
+            self._sweep_analyses(repo, name)
             for a in self._get(f"repos/{repo}/secret-scanning/alerts?state=open&per_page=100",
                                required=True):
                 found.append(Alert(
@@ -352,6 +366,21 @@ class SecuritySource:
                     severity="critical", path=None,
                 ))
         return found
+
+    def _sweep_analyses(self, repo: str, name: str) -> None:
+        branch = self.default_branches.get(name)
+        if not branch:
+            # Never guessed: a wrong branch has no analyses, which reads as
+            # "code scanning is off" — quiet, and indistinguishable from clean.
+            self.failures.append(
+                f"repos/{repo} → no default branch in the listing; CodeQL "
+                "coverage cannot be judged"
+            )
+            return
+        analyses = self._get(f"repos/{repo}/code-scanning/analyses?per_page=100")
+        self.analysis_gaps.extend(
+            _coverage(repo, analyses, branch, datetime.now(timezone.utc))
+        )
 
     # ── planning ─────────────────────────────────────────────────────────────
 
@@ -381,14 +410,11 @@ class SecuritySource:
                 self.paged.append(f)
         out.extend(_gap_finding(p, self.managed_label) for p in self.gaps)
         out.extend(
-            _analysis_gap_finding(repo, category, error, self.managed_label)
-            for repo, category, error in self.analysis_gaps
+            _analysis_gap_finding(g, self.managed_label) for g in self.analysis_gaps
         )
         return out
 
     def plan(self, tracker: Tracker) -> Iterable[Action]:
-        from datetime import datetime, timedelta, timezone
-
         managed = [
             i for i in tracker.list_issues(
                 IssueQuery(open_only=True, label=self.managed_label)
@@ -459,50 +485,121 @@ def _gap_finding(path: str, label: str) -> Finding:
     )
 
 
-def _analysis_errors(analyses: list[dict]) -> list[tuple[str, str]]:
-    """(category, error) for each category whose *most recent* analysis errored.
+@dataclass(frozen=True, slots=True)
+class CoverageGap:
+    """One CodeQL category that is not covering a repo's default branch."""
 
-    Latest is by `created_at`, not by list position — a failed run and its
-    fixed rerun can land in either order within one page, and picking the
-    wrong one is the whole bug this exists to catch.
+    repo: str
+    branch: str
+    category: str
+    last: datetime
+    """When the category was last analysed on `branch`."""
+    error: str
+    """That analysis's error; empty if it ran clean."""
+    stale: bool
+    """The current config no longer produces this category at all. Its last
+    result, failed or clean, is history rather than coverage."""
+
+
+def _coverage(
+    repo: str, analyses: list[dict], branch: str, now: datetime
+) -> list[CoverageGap]:
+    """Categories that do not cover `branch`: their latest analysis there
+    errored (failing), or the config stopped producing them (stale).
+
+    🔴 **Only the default branch counts.** A PR's merge ref is analysed with the
+    PR's config, which is exactly what a PR that adds a language changes. Its
+    clean result is a proposal, not coverage. touchid-agent's swift and c-cpp
+    ran clean on `refs/pull/48/merge` while `main` still did not scan swift,
+    and counting the PR would have closed both issues on that evidence alone.
+    The branch is read from the API, never assumed: dotfiles' is `master`.
+
+    🔴 **"Latest ever" is not "current".** A category the config dropped keeps
+    its last result for good, so a failure that will never be retried read as
+    failing forever and could never close. Stale here means a later run on
+    the branch had time to finish (`ANALYSIS_SETTLE`) and did not produce the
+    category. Measured against the repo's own runs, not the clock, so a repo
+    nobody pushes to is quiet rather than stale. The settle window keeps a
+    sweep that lands mid-run from reading categories still uploading as dropped.
+
+    Only CodeQL's own analyses count. Other SARIF uploaders share the endpoint
+    with their own lifecycles: cobra's OSSAR scan, removed in 2024, would
+    otherwise be reported as a CodeQL language gone stale.
+
+    Latest is by `created_at`, not list position — a failed run and its fixed
+    rerun can land in either order within one page.
     """
-    latest: dict[str, dict] = {}
+    ref = f"refs/heads/{branch}"
+    latest: dict[str, tuple[datetime, dict]] = {}
+    settled: datetime | None = None
     for a in analyses:
         category = a.get("category")
-        if not category:
+        if (a.get("ref") != ref or not category or not a.get("created_at")
+                or (a.get("tool") or {}).get("name") != "CodeQL"):
             continue
-        current = latest.get(category)
-        if current is None or a.get("created_at", "") > current.get("created_at", ""):
-            latest[category] = a
-    return [(category, a["error"]) for category, a in latest.items() if a.get("error")]
+        at = datetime.fromisoformat(a["created_at"])
+        if at <= now - ANALYSIS_SETTLE and (settled is None or at > settled):
+            settled = at
+        if category not in latest or at > latest[category][0]:
+            latest[category] = (at, a)
+
+    out: list[CoverageGap] = []
+    for category, (at, a) in latest.items():
+        stale = settled is not None and at < settled - ANALYSIS_SETTLE
+        if stale or a.get("error"):
+            out.append(CoverageGap(repo, branch, category, at, a.get("error") or "", stale))
+    return out
 
 
-def _analysis_gap_finding(repo: str, category: str, error: str, label: str) -> Finding:
-    """A CodeQL language whose latest run errored, as a piece of work. Default
-    setup drops the language and reports the run a success, so this looks
-    exactly like a clean language until someone checks. Closes itself once a
-    clean analysis for this category lands.
+def _analysis_gap_finding(gap: CoverageGap, label: str) -> Finding:
+    """A CodeQL category that does not cover the default branch, as a piece of
+    work. Default setup drops a failed language and reports the run a success,
+    so this looks exactly like a clean language until someone checks.
 
-    The key carries only repo and category — never the analysis id or a
-    timestamp — so every failed rerun of the same language maps to the same
-    issue instead of opening a new one each time.
+    The key carries only repo and category — never the analysis id, a
+    timestamp, or whether it is failing or stale. That is one condition, "this
+    language is not covered", in two states. A key per state would close and
+    reopen the issue on every transition. The title records the state at
+    creation and, like every title, is never corrected after that.
     """
+    repo, branch, category = gap.repo, gap.branch, gap.category
     lang = category.strip("/").split(":", 1)[-1]
     name = repo.rsplit("/", 1)[-1]
+    since = f"{gap.last:%Y-%m-%d}"
+    if gap.stale:
+        last = f"errored (`{gap.error}`)" if gap.error else "was clean"
+        title = f"CodeQL {lang} not scanned in {name} since {since}"
+        why = [
+            f"**{category}** was last analysed on **{repo}**'s default branch "
+            f"`{branch}` on {since}, and that run {last}. `{branch}` has been "
+            "analysed since without it, so the current code-scanning config "
+            "no longer produces it. What CodeQL would find there is invisible, "
+            "which looks exactly like a clean language.",
+            "",
+            f"Closes once a clean **{category}** analysis lands on `{branch}`. "
+            "If the language is deliberately not scanned, retire it in GitHub: "
+            f"delete the `{category}` analyses on `refs/heads/{branch}` (newest "
+            "first; the last needs `confirm_delete`). That removes the evidence, "
+            "and the issue closes.",
+        ]
+    else:
+        title = f"CodeQL {lang} analysis is failing in {name}"
+        why = [
+            f"GitHub's latest code-scanning analysis for **{category}** on "
+            f"**{repo}**'s default branch `{branch}` ({since}) errored, so the "
+            "sweep cannot see what CodeQL would have found there — which looks "
+            "exactly like a clean language.",
+            "",
+            f"GitHub's error: `{gap.error}`",
+            "",
+            f"Closes once a clean analysis for this category lands on `{branch}`. "
+            "Analyses on pull-request refs never count.",
+        ]
     return Finding(
         key=f"https://github.com/{repo}/security/code-scanning"
             f"#{urllib.parse.quote(category.strip('/'), safe=':')}",
-        title=f"CodeQL {lang} analysis is failing in {name}",
-        body="\n".join([
-            f"GitHub's latest code-scanning analysis for **{category}** on "
-            f"**{repo}** errored, so the sweep cannot see what CodeQL would "
-            "have found there — which looks exactly like a clean language.",
-            "",
-            f"GitHub's error: `{error}`",
-            "",
-            "This issue closes on the next sweep once a clean analysis for "
-            "this category lands.",
-        ]),
+        title=title,
+        body="\n".join(why),
         lane=Lane.PLAN,
         labels=frozenset({label}),
         priority=2,
