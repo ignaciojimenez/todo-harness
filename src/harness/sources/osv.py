@@ -21,11 +21,19 @@ Two things OSV does not give, which changes the routing:
 Without exploitation evidence, nothing here pages. A page that cannot say
 "someone is doing this right now" teaches its reader to ignore pages, and the
 one alert that mattered then arrives into a habit of dismissal.
+
+**Runtimes are not in the SBOM.** GitHub lists third-party packages only, so
+the Go stdlib a binary links went unasked: verified 2026-09-15, OSV reported 33
+advisories against go1.26.0's stdlib that the sweep never surfaced. Each repo's
+`go.mod` is read for the toolchain it declares and queried as `stdlib`. Python
+and Node are reported as unchecked instead — see `UNCHECKED_RUNTIMES`.
 """
 
 from __future__ import annotations
 
+import base64
 import json
+import re
 import urllib.parse
 import urllib.request
 from collections import defaultdict
@@ -39,6 +47,7 @@ from .security import SecuritySource, exposure_of
 
 OSV_BATCH = "https://api.osv.dev/v1/querybatch"
 OSV_QUERY = "https://api.osv.dev/v1/query"
+OSV_VULN = "https://api.osv.dev/v1/vulns/"
 
 ECOSYSTEM = {
     "golang": "Go",
@@ -87,6 +96,10 @@ class Dep:
     ecosystem: str
     name: str
     version: str
+    manifest: str = ""
+    """The file that declared it. Set for runtimes, which come from a manifest
+    rather than the SBOM; part of the identity, because the exposure map is
+    manifest-level."""
 
 
 SKIP_SELF = "the repository itself, not a dependency"
@@ -126,6 +139,58 @@ def _parse(purl: str) -> tuple[tuple[str, str, str] | None, str]:
     return (eco, urllib.parse.unquote(name), version), ""
 
 
+UNCHECKED_RUNTIMES: dict[str, str] = {
+    "pyproject.toml": "requires-python is a constraint, not the interpreter that runs",
+    "package.json": "engines.node is a constraint, not the Node that runs",
+    ".python-version": "OSV has no CPython package; its advisories carry git ranges only",
+    ".nvmrc": "OSV has no Node package; its advisories carry git ranges only",
+    ".node-version": "OSV has no Node package; its advisories carry git ranges only",
+}
+"""Manifests that imply a runtime this source does not query, and why.
+
+Checked 2026-10-11. OSV has no first-party package for CPython or Node: the
+PSF's records (`PSF-*`) carry only GIT ranges on python/cpython, Node's come
+from NVD with git ranges, and `cpython` under PyPI returns a confident zero.
+Bitnami's `python` and `node` packages do answer by version, but they are a
+repackager's view, not upstream's. The deciding fact is the version, though:
+no repo here pins one. `requires-python = ">=3.11"` is a floor, and CI asks
+setup-python for "3.12" and setup-node for "22", which float to the latest
+patch on every run. Querying the floor would report advisories against a
+version that never runs, and a guess at the patch would be silent when wrong.
+"""
+
+_GO_DIRECTIVE = re.compile(r"^\s*(go|toolchain)\s+(\S+)", re.MULTILINE)
+_GO_RELEASE = re.compile(r"\d+\.\d+\.\d+")
+
+
+def go_runtime(go_mod: str) -> tuple[str | None, str]:
+    """The Go release a `go.mod` builds with, or None and why not.
+
+    `toolchain` wins over `go`, as it does for setup-go's `go-version-file`.
+    Both are minimums for a local build; a CI build pinned by
+    `go-version-file` uses exactly this one.
+
+    🔴 Verified 2026-10-11, each a confident wrong answer from OSV rather than
+    an error: `go1.26.0` returns 162 advisories against the 46 for `1.26.0`, so
+    the toolchain's `go` prefix must go; and `go 1.26` is a language version,
+    not a release, which setup-go resolves to whatever patch is latest.
+    """
+    found = {k: v.split("//")[0].strip() for k, v in _GO_DIRECTIVE.findall(go_mod)}
+    if "toolchain" in found:
+        directive, raw = "toolchain", found["toolchain"].removeprefix("go")
+    elif "go" in found:
+        directive, raw = "go", found["go"]
+    else:
+        return None, "runtime not checked: no go or toolchain directive"
+    if not _GO_RELEASE.fullmatch(raw):
+        return None, (
+            f"runtime not checked: {directive} {found[directive]} is not a "
+            "release (a language version or pre-release resolves to an "
+            "unknown toolchain)"
+        )
+    return raw, ""
+
+
 @dataclass
 class OsvSource:
     owner: str
@@ -162,6 +227,7 @@ class OsvSource:
 
     def __post_init__(self) -> None:
         self._gh = SecuritySource(owner=self.owner, token=self.token)
+        self._records: dict[str, dict] = {}
 
     # ── fetching ─────────────────────────────────────────────────────────────
 
@@ -186,19 +252,63 @@ class OsvSource:
                         continue
                     eco, pkg, ver = parsed
                     out.append(Dep(repo, eco, pkg, ver))
+            out.extend(self.runtimes(repo, name))
         self.seen = len(out)
         return out
 
-    def _raw_sbom(self, repo: str) -> dict:
-        """Fetch the SBOM, falling back to no auth when the token is refused.
+    def runtimes(self, repo: str, name: str) -> list[Dep]:
+        """The language runtimes a repo declares, read from its default branch.
 
-        🔴 **An under-scoped token is worse than no token here.** This endpoint
-        serves public repositories unauthenticated, but a PAT lacking repository
-        read gets 403 — so presenting credentials turned a working call into a
-        failure, and the empty result read as "no dependencies". Verified
-        2026-09-15: no auth → HTTP 200, seven packages.
+        Go only; see `UNCHECKED_RUNTIMES` for why Python and Node are reported
+        rather than queried. A manifest that cannot be read marks the sweep
+        incomplete: a runtime nobody checked looks exactly like a clean one.
         """
-        url = f"https://api.github.com/repos/{repo}/dependency-graph/sbom"
+        branch = self._gh.default_branches.get(name)
+        if not branch:
+            self._gh.failures.append(
+                f"repos/{repo} → no default branch in the listing; runtimes unread"
+            )
+            return []
+        tree = self._raw_get(
+            f"repos/{repo}/git/trees/{urllib.parse.quote(branch, safe='')}?recursive=1",
+            repo, "tree",
+        )
+        if tree.get("truncated"):
+            self._gh.failures.append(f"{repo} tree → truncated; manifests may be missing")
+        out: list[Dep] = []
+        for entry in tree.get("tree") or []:
+            path = entry.get("path", "")
+            base = path.rsplit("/", 1)[-1]
+            if entry.get("type") != "blob":
+                continue
+            if base in UNCHECKED_RUNTIMES:
+                self.skipped.append(
+                    f"{repo}  {path}  — runtime not checked: {UNCHECKED_RUNTIMES[base]}"
+                )
+            elif base == "go.mod":
+                blob = self._raw_get(f"repos/{repo}/git/blobs/{entry['sha']}", repo, path)
+                if not blob:
+                    continue  # failure already recorded
+                version, why = go_runtime(base64.b64decode(blob.get("content", "")).decode())
+                if version:
+                    out.append(Dep(repo, "Go", "stdlib", version, manifest=path))
+                else:
+                    self.skipped.append(f"{repo}  {path}  — {why}")
+        return out
+
+    def _raw_sbom(self, repo: str) -> dict:
+        return self._raw_get(f"repos/{repo}/dependency-graph/sbom", repo, "sbom")
+
+    def _raw_get(self, path: str, repo: str, what: str) -> dict:
+        """GET one object, falling back to no auth when the token is refused.
+
+        🔴 **An under-scoped token is worse than no token here.** These
+        endpoints serve public repositories unauthenticated, but a PAT lacking
+        repository read gets 403 — so presenting credentials turned a working
+        call into a failure, and the empty SBOM read as "no dependencies".
+        Verified 2026-09-15: no auth → HTTP 200, seven packages.
+        """
+        url = f"https://api.github.com/{path}"
         accept = {"Accept": "application/vnd.github+json"}
 
         for headers, labelled in (
@@ -209,21 +319,21 @@ class OsvSource:
                 with urllib.request.urlopen(
                     urllib.request.Request(url, headers=headers), timeout=30
                 ) as r:
-                    if labelled == "unauthenticated":
+                    if labelled == "unauthenticated" and repo not in self.fallbacks:
                         self.fallbacks.append(repo)
                     return json.loads(r.read())
             except urllib.error.HTTPError as e:
                 if e.code in {401, 403}:
                     continue  # try again without credentials
-                self._gh.failures.append(f"{repo} sbom → HTTP {e.code}")
+                self._gh.failures.append(f"{repo} {what} → HTTP {e.code}")
                 return {}
             except Exception as e:  # noqa: BLE001
-                self._gh.failures.append(f"{repo} sbom → {type(e).__name__}")
+                self._gh.failures.append(f"{repo} {what} → {type(e).__name__}")
                 return {}
 
         # Both attempts refused. NOT "this repo has no dependencies" — recording
         # it is what stops the sweep concluding a fixed CVE from an empty SBOM.
-        self._gh.failures.append(f"{repo} sbom → refused with and without auth")
+        self._gh.failures.append(f"{repo} {what} → refused with and without auth")
         return {}
 
     def already_alerted(self) -> set[tuple[str, str]]:
@@ -254,6 +364,29 @@ class OsvSource:
             out.extend(x.get("vulns") or [] for x in results)
         return out
 
+    def _details(self, vulns: list[dict]) -> list[dict]:
+        """Full advisory records for the stubs `querybatch` returns.
+
+        🔴 `querybatch` answers with `id` and `modified` only — verified
+        2026-10-11. Rendering those stubs printed every advisory as having no
+        summary and **no fix available**, on every OSV issue opened before this
+        fetch existed. A record that cannot be fetched stays a stub, and the
+        body says its details are missing rather than that there is no fix.
+        """
+        out = []
+        for v in vulns:
+            vid = v.get("id", "")
+            if vid not in self._records:
+                try:
+                    url = OSV_VULN + urllib.parse.quote(vid, safe="")
+                    with urllib.request.urlopen(url, timeout=30) as r:
+                        self._records[vid] = json.loads(r.read())
+                except Exception as e:  # noqa: BLE001
+                    self._gh.failures.append(f"osv {vid} → {type(e).__name__}")
+                    self._records[vid] = v
+            out.append(self._records[vid])
+        return out
+
     # ── planning ─────────────────────────────────────────────────────────────
 
     def findings(self) -> list[Finding]:
@@ -278,21 +411,22 @@ class OsvSource:
                 else:
                     kept.append(v)
             if kept:
-                grouped[(dep.repo, dep.name.casefold())].append((dep, kept))
+                grouped[(dep.repo, dep.manifest, dep.name.casefold())].append((dep, kept))
 
-        for (repo, _), members in grouped.items():
+        for (repo, manifest, _), members in grouped.items():
             dep = members[0][0]
             vulns = members[0][1]
-            exposure = exposure_of(repo, None)
+            exposure = exposure_of(repo, manifest or None)
             if exposure == "local":
-                self.silent.append((dep, "dependency of a local-only repo"))
+                self.silent.append((dep, "dependency of a local-only manifest"))
                 continue
             out.append(Finding(
                 key=marker_url(dep),
-                title=f"{dep.name} {dep.version} in {repo.split('/')[-1]} — "
+                title=f"{_what(dep)} in {repo.split('/')[-1]}"
+                      f"{f' ({manifest})' if manifest else ''} — "
                       f"{len(vulns)} advisor{'y' if len(vulns) == 1 else 'ies'} "
                       "OSV reports and GitHub does not"[:120],
-                body=_body(dep, vulns, exposure),
+                body=_body(dep, self._details(vulns), exposure),
                 lane=Lane.PLAN,
                 labels=frozenset({self.managed_label}),
                 priority=2,
@@ -337,32 +471,61 @@ def marker_url(d: Dep) -> str:
 
     The fragment carries the repo because OSV's listing is not repo-scoped, and
     the same vulnerable package in two repos is two separate upgrades. A
+    runtime adds its manifest: two modules in one repo are two toolchain bumps. A
     fragment is ignored by the server, so the link still lands somewhere useful.
     """
     q = urllib.parse.urlencode({"q": d.name, "ecosystem": d.ecosystem})
-    return f"https://osv.dev/list?{q}#{d.repo}"
+    return f"https://osv.dev/list?{q}#{d.repo}{f'/{d.manifest}' if d.manifest else ''}"
+
+
+def _what(d: Dep) -> str:
+    """`golang.org/x/crypto 0.55.0`, or `Go stdlib 1.26.0` for a runtime."""
+    name = f"{d.ecosystem} {d.name}" if d.manifest else d.name
+    return f"{name} {d.version}"
 
 
 def _body(d: Dep, vulns: list[dict], exposure: str) -> str:
-    lines = [
-        f"**{d.repo}** · `{d.name}` **{d.version}** ({d.ecosystem}) · "
-        f"exposure **{exposure}**.",
-        "",
-        "🔴 **GitHub reports nothing for this package.** Dependabot alerts being "
-        "enabled is not evidence of coverage; treat its silence on this "
-        "ecosystem as unproven.",
-        "",
-    ]
+    if d.manifest:
+        head = [
+            f"**{d.repo}** · `{d.manifest}` declares {d.ecosystem} **{d.version}** "
+            f"· exposure **{exposure}**.",
+            "",
+            "🔴 **GitHub cannot report this.** Its SBOM lists third-party "
+            "packages only, so the toolchain's standard library is in no "
+            "Dependabot alert. Raise the `toolchain` line (or `go`, if there is "
+            "none) to a fixed release: a CI build pinned by `go-version-file` "
+            "then builds with it.",
+        ]
+    else:
+        head = [
+            f"**{d.repo}** · `{d.name}` **{d.version}** ({d.ecosystem}) · "
+            f"exposure **{exposure}**.",
+            "",
+            "🔴 **GitHub reports nothing for this package.** Dependabot alerts "
+            "being enabled is not evidence of coverage; treat its silence on "
+            "this ecosystem as unproven.",
+        ]
+    lines = [*head, ""]
     for v in vulns[:6]:
+        if "affected" not in v:
+            lines.append(f"- **{v['id']}** — details could not be fetched; see osv.dev")
+            continue
+        # An advisory can cover several packages: one against net/http also
+        # lists golang.org/x/net, whose fixes are not this package's fixes.
+        mine = [
+            a for a in v["affected"]
+            if (a.get("package") or {}).get("name", "").casefold() == d.name.casefold()
+            and (a.get("package") or {}).get("ecosystem") == d.ecosystem
+        ] or v["affected"]
         affected_pkgs = sorted({
             i.get("path", "")
-            for a in v.get("affected", [])
+            for a in mine
             for i in (a.get("ecosystem_specific", {}) or {}).get("imports", [])
             if i.get("path")
         })
         fixed = sorted({
             e["fixed"]
-            for a in v.get("affected", [])
+            for a in mine
             for r in a.get("ranges", [])
             for e in r.get("events", [])
             if "fixed" in e
@@ -375,6 +538,8 @@ def _body(d: Dep, vulns: list[dict], exposure: str) -> str:
         )
         if affected_pkgs:
             lines.append(f"  - affects only: `{'`, `'.join(affected_pkgs[:4])}`")
+    if len(vulns) > 6:
+        lines.append(f"- … and {len(vulns) - 6} more at the link.")
     lines += [
         "",
         "🔴 **An advisory is against the module; applicability depends on the "
