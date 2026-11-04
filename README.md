@@ -42,7 +42,8 @@ printing the return value. Run it against production and nothing happens.
   a human takes an issue and the harness goes quiet without being told.
 - **A heartbeat every run, including empty ones.** A sweep that only speaks when
   it finds something is indistinguishable from one that died a fortnight ago.
-- **Silent findings never become issues.** A queue is for actions.
+- **Silent findings never become issues, and never close one.** A queue is for
+  actions, but moving between sources or lanes is not the same as being fixed.
 
 ## Use
 

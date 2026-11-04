@@ -145,6 +145,71 @@ def test_silent_findings_never_reach_the_tracker():
     assert reconcile([finding(lane=Lane.SILENT)], [], policy(), NOW).actions == ()
 
 
+def test_a_finding_gone_silent_is_not_absent():
+    """Silent is a lane, not a verdict. PER-169: read as absence, it closed four
+    issues as "no longer true" with the vulnerable versions still pinned."""
+    assert reconcile([finding(lane=Lane.SILENT)], [issue()], policy(), NOW).actions == ()
+
+
+def test_a_finding_gone_silent_clears_an_absence_mark():
+    marked = issue(absent_since=NOW - timedelta(days=9))
+    plan = reconcile([finding(lane=Lane.SILENT)], [marked], policy(), NOW)
+    assert kinds(plan) == [MarkPresent]
+
+
+def test_a_finding_gone_silent_clears_its_mark_on_an_incomplete_sweep():
+    """Partial data may add. Seeing the finding is not an inference from
+    silence, so it does not wait for a complete sweep."""
+    marked = issue(absent_since=NOW - timedelta(days=9))
+    plan = reconcile([finding(lane=Lane.SILENT)], [marked], policy(), NOW, complete=False)
+    assert kinds(plan) == [MarkPresent] and plan.absence_suppressed == 0
+
+
+def test_the_close_says_what_the_source_knows():
+    gone = issue(absent_since=NOW - timedelta(hours=30))
+    plan = reconcile([], [gone], policy(absent_means="the sensor reads clean"), NOW)
+    (close,) = plan.actions
+    assert close.why == "the sensor reads clean; gone for 30h"
+
+
+def test_a_close_never_claims_more_than_the_source_said():
+    (close,) = reconcile([], [issue(absent_since=NOW - timedelta(hours=30))], policy(), NOW).actions
+    assert "no longer true" not in close.why
+
+
+def closed(**kw) -> Issue:
+    kw.setdefault("absent_since", NOW - timedelta(days=9))
+    return issue(id="old", ref="PER-9", closed=True, **kw)
+
+
+def test_a_closed_issue_whose_finding_went_silent_is_reported():
+    plan = reconcile([finding(lane=Lane.SILENT)], [closed()], policy(), NOW)
+    assert plan.actions == () and plan.closed_while_true == ("PER-9",)
+
+
+def test_a_closed_issue_whose_finding_is_gone_is_not_reported():
+    assert reconcile([], [closed()], policy(), NOW).closed_while_true == ()
+
+
+def test_a_human_close_is_never_reported():
+    plan = reconcile([finding(lane=Lane.SILENT)], [closed(absent_since=None)], policy(), NOW)
+    assert plan.closed_while_true == ()
+
+
+def test_a_closed_issue_a_human_took_is_not_reported():
+    plan = reconcile(
+        [finding(lane=Lane.SILENT)], [closed(labels=frozenset())], policy(), NOW
+    )
+    assert plan.closed_while_true == ()
+
+
+def test_closed_issues_are_not_reported_as_adopted_or_unmarked():
+    """Plans now read closed issues too; that must not change what they say
+    about open ones."""
+    plan = reconcile([], [closed(labels=frozenset()), closed(key=None)], policy(), NOW)
+    assert plan.adopted == () and plan.unmarked == () and plan.actions == ()
+
+
 def test_page_findings_still_get_an_issue():
     """Paging is the notifier's job; it does not exempt the work from tracking."""
     assert kinds(reconcile([finding(lane=Lane.PAGE)], [], policy(), NOW)) == [Open]

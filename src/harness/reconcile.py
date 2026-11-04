@@ -26,6 +26,12 @@ The rules, and why each exists:
   theirs. The harness proposes nothing for it — that is the "adopt" gesture, and
   it must work without anyone telling the harness it happened.
 * **Silent findings are not issues.** A queue is for actions.
+* **A silent finding is still a finding.** It opens nothing, but it is still
+  true, so an issue already open for it stays open. Only a finding that nobody
+  reports any more counts as absent. Moving between sources or lanes is not
+  being fixed: four issues were closed as "no longer true" with the vulnerable
+  version still in the lockfile, because Dependabot took over from OSV and
+  routed the alert silent.
 """
 
 from __future__ import annotations
@@ -54,6 +60,10 @@ class Policy:
 
     close_after: timedelta = timedelta(hours=24)
     """How long a finding must be gone before its issue closes. Never zero."""
+
+    absent_means: str = "the source no longer reports this"
+    """What this source's silence is evidence of, in its own terms. It reaches
+    the close comment, which must say only what the source actually knows."""
 
     allowed_labels: frozenset[str] = frozenset()
     """Labels the tracker's contract permits. Anything else on a managed issue is
@@ -84,6 +94,11 @@ class Plan:
     by hand. Reported rather than skipped: silently ignoring an issue that claims
     to be ours is how a queue quietly stops meaning anything."""
 
+    closed_while_true: tuple[str, ...] = ()
+    """Issues the harness closed as absent whose finding is reported again, in a
+    lane that opens nothing, so no sweep will ever raise it. Reported, never
+    reopened: whether it comes back is a human's call."""
+
 
 def reconcile(
     findings: Iterable[Finding],
@@ -94,8 +109,9 @@ def reconcile(
 ) -> Plan:
     """Return the actions that reconcile `findings` against `managed`.
 
-    `managed` is every open issue carrying the policy's label, each already
-    carrying the key and absence mark the tracker read back for it.
+    `managed` is every issue carrying the policy's label, each already carrying
+    the key and absence mark the tracker read back for it. Closed ones are only
+    read for `closed_while_true`.
 
     🔴 **`complete=False` means the source could not see everything, and then
     absence proves nothing.** Partial data may add; it must never subtract. This
@@ -105,10 +121,13 @@ def reconcile(
     vulnerability. A source that cannot see is indistinguishable from an estate
     that is clean, and only the source knows which it was.
     """
+    findings = list(findings)
     actionable = {f.key: f for f in findings if f.lane is not Lane.SILENT}
+    silent = {f.key for f in findings} - actionable.keys()
 
-    ours = [i for i in managed if policy.managed_label in i.labels]
-    adopted = [i.ref or i.id for i in managed if policy.managed_label not in i.labels]
+    live = [i for i in managed if not i.closed]
+    ours = [i for i in live if policy.managed_label in i.labels]
+    adopted = [i.ref or i.id for i in live if policy.managed_label not in i.labels]
     by_key = {i.key: i for i in ours if i.key}
     unmarked = [i.ref or i.id for i in ours if not i.key]
 
@@ -117,7 +136,7 @@ def reconcile(
 
     for key, finding in actionable.items():
         issue = by_key.get(key)
-        if issue is None or issue.closed:
+        if issue is None:
             actions.append(Open(finding, why="newly true, no open issue"))
             continue
         if issue.absent_since is not None:
@@ -128,7 +147,13 @@ def reconcile(
             actions.append(diff)
 
     for key, issue in by_key.items():
-        if key in actionable or issue.closed:
+        if key in actionable:
+            continue
+        if key in silent:
+            if issue.absent_since is not None:
+                actions.append(
+                    MarkPresent(issue.id, why="still true, now silent; absence mark cleared")
+                )
             continue
         if not complete:
             suppressed += 1
@@ -139,7 +164,7 @@ def reconcile(
         gone = now - issue.absent_since
         if gone >= policy.close_after:
             actions.append(
-                Close(issue.id, why=f"absent for {_human(gone)}, no longer true")
+                Close(issue.id, why=f"{policy.absent_means}; gone for {_human(gone)}")
             )
 
     return Plan(
@@ -147,6 +172,15 @@ def reconcile(
         adopted=tuple(adopted),
         unmarked=tuple(unmarked),
         absence_suppressed=suppressed,
+        closed_while_true=tuple(
+            i.ref or i.id
+            for i in managed
+            if i.closed
+            and policy.managed_label in i.labels
+            and i.absent_since is not None  # a human's close leaves no mark
+            and i.key in silent
+            and i.key not in by_key
+        ),
     )
 
 

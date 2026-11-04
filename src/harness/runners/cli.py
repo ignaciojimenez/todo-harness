@@ -305,6 +305,11 @@ def _plan_notes(plan) -> list[str]:
         out.append(f"{ref}  adopted by a human — the harness has stopped touching it")
     for ref in getattr(plan, "unmarked", ()):
         out.append(f"{ref}  carries an agent label but no marker — which finding is it?")
+    for ref in getattr(plan, "closed_while_true", ()):
+        out.append(
+            f"{ref}  closed by the harness as absent, but its finding is reported "
+            "now, silent, so no sweep will reopen it — reopen it or leave it"
+        )
     return out
 
 

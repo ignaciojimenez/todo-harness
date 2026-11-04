@@ -12,6 +12,11 @@ exist to prevent. So this asks GitHub what it already knows about, and covers
 the rest. A side effect worth watching: the number of findings here *is* a
 measure of how much to trust GitHub's coverage.
 
+🔴 **Handing a package to GitHub is not fixing it.** A package GitHub takes over
+is still emitted, silent, under this source's marker, so an issue already open
+stays open until GitHub's alert closes too. Dropping it instead closed PER-89,
+99, 100 and 102 as "no longer true" with the vulnerable versions still pinned.
+
 Two things OSV does not give, which changes the routing:
 
 * **no dev/runtime scope** — the SBOM does not carry it either, so a build-only
@@ -396,7 +401,9 @@ class OsvSource:
         self.covered = len(deps) - len(gaps)
 
         self.silent = []
-        out: list[Finding] = []
+        out: list[Finding] = [
+            _still_true(d) for d in deps if (d.repo, d.name.casefold()) in covered
+        ]
         grouped: dict[tuple, list] = defaultdict(list)
         self.suppressions = []
         for dep, vulns in zip(gaps, self._osv_batch(gaps)):
@@ -419,6 +426,7 @@ class OsvSource:
             exposure = exposure_of(repo, manifest or None)
             if exposure == "local":
                 self.silent.append((dep, "dependency of a local-only manifest"))
+                out.append(_still_true(dep))
                 continue
             out.append(Finding(
                 key=marker_url(dep),
@@ -438,7 +446,7 @@ class OsvSource:
 
         managed = [
             i for i in tracker.list_issues(
-                IssueQuery(open_only=True, label=self.managed_label)
+                IssueQuery(open_only=False, label=self.managed_label)
             )
             if _ours(i.key)
         ]
@@ -449,6 +457,10 @@ class OsvSource:
                 managed_label=self.managed_label,
                 close_after=timedelta(hours=self.close_after_hours),
                 allowed_labels=self.allowed_labels,
+                absent_means=(
+                    "OSV has no applicable advisory for what the repo now uses, "
+                    "and GitHub no open alert"
+                ),
             ),
             datetime.now(timezone.utc),
             complete=not self.failures,
@@ -476,6 +488,12 @@ def marker_url(d: Dep) -> str:
     """
     q = urllib.parse.urlencode({"q": d.name, "ecosystem": d.ecosystem})
     return f"https://osv.dev/list?{q}#{d.repo}{f'/{d.manifest}' if d.manifest else ''}"
+
+
+def _still_true(d: Dep) -> Finding:
+    """A package this source will not raise, but cannot call clean. Silent, so
+    it opens nothing and only holds an issue that is already open."""
+    return Finding(key=marker_url(d), title=_what(d), lane=Lane.SILENT)
 
 
 def _what(d: Dep) -> str:
