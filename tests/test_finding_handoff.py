@@ -212,7 +212,11 @@ def test_a_handoff_to_an_alert_with_its_own_issue_still_holds(monkeypatch):
     src = _osv(monkeypatch, {"postcss-selector-parser": "6.1.4"}, runtime)
     assert list(src.plan(Tracker(_issue(_key("postcss-selector-parser"))))) == []
     (opened,) = _security(monkeypatch, runtime).plan(Tracker())
-    assert isinstance(opened, Open) and "github.com" in opened.finding.key
+    assert isinstance(opened, Open)
+    assert opened.finding.key == (
+        f"https://github.com/{SITE}/security/dependabot"
+        "?q=is%3Aopen+package%3Apostcss-selector-parser"
+    )
 
 
 # ── lanes: the same failure with no second source involved ───────────────────
