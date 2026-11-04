@@ -396,6 +396,11 @@ class SecuritySource:
             lane, why = route(head)
             if lane is Lane.SILENT:
                 self.silent.extend((m, why) for m in members)
+                # Still true, so it is still emitted: reconcile() must not read
+                # a lane change as absence. See `Lane.SILENT`.
+                out.append(Finding(
+                    key=marker_url(head), title=_title(head, len(members)), lane=lane,
+                ))
                 continue
             f = Finding(
                 key=marker_url(head),
@@ -417,7 +422,7 @@ class SecuritySource:
     def plan(self, tracker: Tracker) -> Iterable[Action]:
         managed = [
             i for i in tracker.list_issues(
-                IssueQuery(open_only=True, label=self.managed_label)
+                IssueQuery(open_only=False, label=self.managed_label)
             )
             if _ours(i.key)
         ]
@@ -425,6 +430,9 @@ class SecuritySource:
             managed_label=self.managed_label,
             close_after=timedelta(hours=self.close_after_hours),
             allowed_labels=self.allowed_labels,
+            absent_means=(
+                "GitHub no longer shows this as open (fixed, dismissed or withdrawn)"
+            ),
         )
         findings = self.findings()
         result = reconcile(

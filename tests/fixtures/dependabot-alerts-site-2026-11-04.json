@@ -1,0 +1,851 @@
+[
+  {
+    "assignees": [],
+    "auto_dismissed_at": null,
+    "created_at": "2026-10-12T21:31:18Z",
+    "dependency": {
+      "manifest_path": "package-lock.json",
+      "package": {
+        "ecosystem": "npm",
+        "name": "brace-expansion"
+      },
+      "relationship": "transitive",
+      "scope": "development",
+      "version_requirement": "2.1.4"
+    },
+    "dismissal_request": null,
+    "dismissed_at": null,
+    "dismissed_by": null,
+    "dismissed_comment": null,
+    "dismissed_reason": null,
+    "fixed_at": "2026-11-04T21:30:01Z",
+    "html_url": "https://github.com/ignaciojimenez/ignaciojimenezpi.github.io/security/dependabot/42",
+    "number": 42,
+    "reachability": {
+      "verdict": "disabled"
+    },
+    "security_advisory": {
+      "classification": "general",
+      "cve_id": "CVE-2026-102278",
+      "cvss": {
+        "score": 7.5,
+        "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+      },
+      "cvss_severities": {
+        "cvss_v3": {
+          "score": 7.5,
+          "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+        },
+        "cvss_v4": {
+          "score": 0.0,
+          "vector_string": null
+        }
+      },
+      "cwes": [
+        {
+          "cwe_id": "CWE-400",
+          "name": "Uncontrolled Resource Consumption"
+        },
+        {
+          "cwe_id": "CWE-674",
+          "name": "Uncontrolled Recursion"
+        }
+      ],
+      "description": "### Summary\n\n`expand_()` recurses once per level of brace *nesting*. Deeply nested input exhausts the native stack and crashes the process.\n\nThis is distinct from CVE-2026-14257 / GHSA-mh99-v99m-4gvg, which made the *tail* iterative (recursion on `m.post`, driven by how many groups are chained). Nesting depth drives a different recursion that the tail fix never touched, so the documented constant-stack-depth guarantee only ever covered chained input, not nested input.\n\nIt is also distinct from GHSA-6j4f-fj2g-mc7p, which fixed recursion in `parseCommaParts()`. Both payloads below still crash with that fix applied.\n\n### Two recursion sites\n\n**Comma members.** Each alternative of a brace set is expanded by a recursive call, so nesting a set inside every alternative recurses once per level:\n\n```js\nexpand('{a,'.repeat(4000) + 'z' + '}'.repeat(4000))\n// RangeError: Maximum call stack size exceeded\n```\n\nCrashes at depth 3,907 - about **15.6 KB** of input.\n\n**Single set.** A brace set whose body parses to a single part is expanded by a recursive call before being re-wrapped (`x{{a,b}}y` -> `x{a}y x{b}y`), which recurses once per nesting level:\n\n```js\nexpand('{'.repeat(3200) + 'a,b' + '}'.repeat(3200))\n// RangeError: Maximum call stack size exceeded\n```\n\nCrashes at depth 3,125 - about **6.25 KB** of input. This is the cheapest stack-exhaustion payload known against this package: roughly a quarter the input of GHSA-6j4f-fj2g-mc7p (29 KB), and about a tenth of minimatch's `MAX_PATTERN_LENGTH` (65,536).\n\n### Why `max` and `maxLength` do not help\n\nBoth crashes happen while recursing into sub-expansions, before the result set grows. The payloads produce almost no output - the single-set case yields 2 results - so neither bound is ever the limiter. `expand(payload, { max: 1, maxLength: 1 })` still overflows.\n\n### Impact\n\nAny application passing an untrusted string to `expand()`, directly or through `minimatch` / `glob` as a user-supplied glob pattern, can be crashed. In Node a `RangeError` the application does not catch terminates the process, so a server globbing user input is exposed to remote unauthenticated denial of service.\n\nAvailability only. No code execution, no data exposure.\n\n### Affected versions\n\nVerified affected on 1.1.18, 2.1.4, 3.0.6 and 5.0.9, at near-identical depths on every line (single set: 3,125 on all four; comma members: 3,907-4,102). Not a regression from any recent fix - the gap predates them.\n\n### Patch\n\nA `maxDepth` bound (default `EXPANSION_MAX_DEPTH`) is threaded through `expand_()`. Past the cap a group is treated as non-expanding and returned literally, which is how the parser already handles a group that cannot expand. This matches the existing `max` / `maxLength` caps, which truncate rather than throw, so `expand()` continues never to throw on any input.\n\nThe default sits far above any realistic nesting depth and well below the crash threshold.",
+      "epss": {
+        "percentage": 0.00491,
+        "percentile": 0.42189
+      },
+      "ghsa_id": "GHSA-qhr7-859c-m2p7",
+      "identifiers": [
+        {
+          "type": "GHSA",
+          "value": "GHSA-qhr7-859c-m2p7"
+        },
+        {
+          "type": "CVE",
+          "value": "CVE-2026-102278"
+        }
+      ],
+      "published_at": "2026-09-29T23:45:17Z",
+      "references": [
+        {
+          "url": "https://github.com/juliangruber/brace-expansion/security/advisories/GHSA-qhr7-859c-m2p7"
+        },
+        {
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-102278"
+        },
+        {
+          "url": "https://github.com/juliangruber/brace-expansion/commit/1efee7c397c191da6287a78ec19512476a966a7b"
+        },
+        {
+          "url": "https://github.com/juliangruber/brace-expansion/commit/935d78f32f335b2ff76578e5c5e877d31ae9888c"
+        },
+        {
+          "url": "https://github.com/juliangruber/brace-expansion/commit/de84f144e9816f30e25fc8179e2e1249ab6df0db"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-qhr7-859c-m2p7"
+        }
+      ],
+      "severity": "high",
+      "summary": "brace-expansion: DoS via uncontrolled recursion on nested brace groups causing stack exhaustion",
+      "updated_at": "2026-09-29T23:45:19Z",
+      "vulnerabilities": [
+        {
+          "first_patched_version": {
+            "identifier": "5.0.11"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "brace-expansion"
+          },
+          "severity": "high",
+          "vulnerable_version_range": ">= 4.0.0, < 5.0.11"
+        },
+        {
+          "first_patched_version": {
+            "identifier": "3.0.8"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "brace-expansion"
+          },
+          "severity": "high",
+          "vulnerable_version_range": ">= 3.0.0, < 3.0.8"
+        },
+        {
+          "first_patched_version": {
+            "identifier": "2.1.6"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "brace-expansion"
+          },
+          "severity": "high",
+          "vulnerable_version_range": ">= 2.0.0, < 2.1.6"
+        },
+        {
+          "first_patched_version": {
+            "identifier": "1.1.20"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "brace-expansion"
+          },
+          "severity": "high",
+          "vulnerable_version_range": "< 1.1.20"
+        }
+      ],
+      "withdrawn_at": null
+    },
+    "security_vulnerability": {
+      "first_patched_version": {
+        "identifier": "2.1.6"
+      },
+      "package": {
+        "ecosystem": "npm",
+        "name": "brace-expansion"
+      },
+      "severity": "high",
+      "vulnerable_version_range": ">= 2.0.0, < 2.1.6"
+    },
+    "state": "fixed",
+    "updated_at": "2026-11-04T21:30:01Z",
+    "url": "https://api.github.com/repos/ignaciojimenez/ignaciojimenezpi.github.io/dependabot/alerts/42"
+  },
+  {
+    "assignees": [],
+    "auto_dismissed_at": null,
+    "created_at": "2026-10-12T21:59:24Z",
+    "dependency": {
+      "manifest_path": "package-lock.json",
+      "package": {
+        "ecosystem": "npm",
+        "name": "brace-expansion"
+      },
+      "relationship": "transitive",
+      "scope": "development",
+      "version_requirement": "2.1.4"
+    },
+    "dismissal_request": null,
+    "dismissed_at": null,
+    "dismissed_by": null,
+    "dismissed_comment": null,
+    "dismissed_reason": null,
+    "fixed_at": "2026-11-04T21:30:02Z",
+    "html_url": "https://github.com/ignaciojimenez/ignaciojimenezpi.github.io/security/dependabot/43",
+    "number": 43,
+    "reachability": {
+      "verdict": "disabled"
+    },
+    "security_advisory": {
+      "classification": "general",
+      "cve_id": "CVE-2026-102276",
+      "cvss": {
+        "score": 7.5,
+        "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+      },
+      "cvss_severities": {
+        "cvss_v3": {
+          "score": 7.5,
+          "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+        },
+        "cvss_v4": {
+          "score": 0.0,
+          "vector_string": null
+        }
+      },
+      "cwes": [
+        {
+          "cwe_id": "CWE-400",
+          "name": "Uncontrolled Resource Consumption"
+        },
+        {
+          "cwe_id": "CWE-674",
+          "name": "Uncontrolled Recursion"
+        }
+      ],
+      "description": "### Summary\n\n`parseCommaParts()` can exhaust the native stack and crash the process. There are two distinct ways to trigger it, both reachable from a single untrusted pattern string.\n\nThis is the parsing-side counterpart to CVE-2026-14257 / GHSA-mh99-v99m-4gvg. That fix made `expand_()` iterative and documented a constant-stack-depth guarantee, but `parseCommaParts()` was left recursive, so the guarantee only held for one of the two parsing paths.\n\n### Vector 1 - unbounded recursion on `post`\n\n`parseCommaParts()` recursed on the remainder of the string once per brace group:\n\n```js\nconst postParts = parseCommaParts(post)   // unbounded\n```\n\nA brace group containing many comma-separated groups drives one recursion level per group:\n\n```js\nexpand('{' + '{a},'.repeat(7000) + 'b}')\n// RangeError: Maximum call stack size exceeded\n```\n\nAbout 7,300 repetitions - roughly 29 KB of input - is enough on Node 24; roughly 6,300 (25 KB) on Node 18. The threshold is identical on every affected release line.\n\n### Vector 2 - `push.apply` with an unbounded array\n\nEven with the recursion removed, `parseCommaParts()` spread whole arrays into an argument list:\n\n```js\np.push.apply(p, postParts)\nparts.push.apply(parts, p)\n```\n\n`Function.prototype.apply` places one argument per element on the stack, so a single large array overflows it. This needs **no recursion depth at all** - the following reaches a recursion depth of exactly 1:\n\n```js\nexpand('{{x},' + 'a,'.repeat(125000) + 'b}')\n// RangeError: Maximum call stack size exceeded\n```\n\nThreshold is about 124,300 repetitions (~249 KB). This vector was not part of the original report; it was found while verifying the fix. A patch that only de-recurses but keeps `push.apply` leaves a working denial of service behind.\n\n### Why `max` and `maxLength` do not help\n\nBoth crashes happen during **parsing**, before any expansion. The payloads produce one result per group, so output size grows linearly with input and is never the limiter. `expand(payload, { max: 1, maxLength: 1 })` still overflows.\n\n### Impact\n\nAny application that passes an untrusted string to `expand()` - directly, or through `minimatch` / `glob` where it is a user-supplied glob pattern - can be crashed. In Node, a `RangeError` that the application does not catch terminates the process, so a server that globs user input is exposed to remote unauthenticated denial of service.\n\n`minimatch`'s own `MAX_PATTERN_LENGTH` cap (65,536) does not help against vector 1: the overflow threshold sits well below it. Confirmed on minimatch 10.2.6 - a 64,003-byte pattern passes the length check and overflows both `minimatch.braceExpand()` and `new minimatch.Minimatch()`.\n\nThis is an availability-only issue. No code execution and no data exposure.\n\n### Not a regression\n\n5.0.8 and 5.0.9 overflow at the same repetition count, so the gap predates the recent advisories; those fixes simply did not reach it. Verified affected on 1.1.18, 2.1.4, 3.0.6, 5.0.8 and 5.0.9, all at an identical threshold.\n\n### Patch\n\n`parseCommaParts()` is rewritten as a loop that carries the partial part across chunks, and every array append uses an element-by-element loop rather than `push.apply`. The redundant `if (!str) return ['']` guard is dropped - the loop returns `['']` for the empty string on its own.\n\nEquivalence of the old and new implementations was checked by differential testing: exhaustive over every string of `{`, `}`, `,`, `a` up to length 7 plus 300,000 random inputs - 322,000 cases, zero mismatches.\n\n### Severity note\n\nScored 7.5 High under CVSS 3.1 for consistency with the other availability advisories on this package (GHSA-mh99-v99m-4gvg, GHSA-rgw5-rvv9-x895), which use the same vector. The reporter self-assessed 6.9 Medium under CVSS 4.0 (`CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:L/SC:N/SI:N/SA:N`).\n\n### Credit\n\nReported by baeseungwon1010, with a working proof of concept and a proposed patch. Vector 2 was identified during maintainer verification.",
+      "epss": {
+        "percentage": 0.00455,
+        "percentile": 0.39547
+      },
+      "ghsa_id": "GHSA-6j4f-fj2g-mc7p",
+      "identifiers": [
+        {
+          "type": "GHSA",
+          "value": "GHSA-6j4f-fj2g-mc7p"
+        },
+        {
+          "type": "CVE",
+          "value": "CVE-2026-102276"
+        }
+      ],
+      "published_at": "2026-09-29T23:44:58Z",
+      "references": [
+        {
+          "url": "https://github.com/juliangruber/brace-expansion/security/advisories/GHSA-6j4f-fj2g-mc7p"
+        },
+        {
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-102276"
+        },
+        {
+          "url": "https://github.com/juliangruber/brace-expansion/commit/0bcbfc0a5928c3073d48f42999d1ce4fc1c42fbc"
+        },
+        {
+          "url": "https://github.com/juliangruber/brace-expansion/commit/316359e6019c39b3254c8ba8e25dc586a480652c"
+        },
+        {
+          "url": "https://github.com/juliangruber/brace-expansion/commit/5171e681c0922b7ae8bfaf9a331e309107be6edc"
+        },
+        {
+          "url": "https://github.com/juliangruber/brace-expansion/commit/6735c94873ca570bcdd6a0690033bdd3126379d3"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-6j4f-fj2g-mc7p"
+        }
+      ],
+      "severity": "high",
+      "summary": "brace-expansion: DoS via uncontrolled recursion in parseCommaParts causing stack exhaustion",
+      "updated_at": "2026-09-29T23:44:59Z",
+      "vulnerabilities": [
+        {
+          "first_patched_version": {
+            "identifier": "5.0.10"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "brace-expansion"
+          },
+          "severity": "high",
+          "vulnerable_version_range": ">= 4.0.0, < 5.0.10"
+        },
+        {
+          "first_patched_version": {
+            "identifier": "3.0.7"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "brace-expansion"
+          },
+          "severity": "high",
+          "vulnerable_version_range": ">= 3.0.0, < 3.0.7"
+        },
+        {
+          "first_patched_version": {
+            "identifier": "2.1.5"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "brace-expansion"
+          },
+          "severity": "high",
+          "vulnerable_version_range": ">= 2.0.0, < 2.1.5"
+        },
+        {
+          "first_patched_version": {
+            "identifier": "1.1.19"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "brace-expansion"
+          },
+          "severity": "high",
+          "vulnerable_version_range": "< 1.1.19"
+        }
+      ],
+      "withdrawn_at": null
+    },
+    "security_vulnerability": {
+      "first_patched_version": {
+        "identifier": "2.1.5"
+      },
+      "package": {
+        "ecosystem": "npm",
+        "name": "brace-expansion"
+      },
+      "severity": "high",
+      "vulnerable_version_range": ">= 2.0.0, < 2.1.5"
+    },
+    "state": "fixed",
+    "updated_at": "2026-11-04T21:30:02Z",
+    "url": "https://api.github.com/repos/ignaciojimenez/ignaciojimenezpi.github.io/dependabot/alerts/43"
+  },
+  {
+    "assignees": [],
+    "auto_dismissed_at": null,
+    "created_at": "2026-10-12T21:59:28Z",
+    "dependency": {
+      "manifest_path": "package-lock.json",
+      "package": {
+        "ecosystem": "npm",
+        "name": "brace-expansion"
+      },
+      "relationship": "transitive",
+      "scope": "development",
+      "version_requirement": "2.1.4"
+    },
+    "dismissal_request": null,
+    "dismissed_at": null,
+    "dismissed_by": null,
+    "dismissed_comment": null,
+    "dismissed_reason": null,
+    "fixed_at": "2026-11-04T21:30:02Z",
+    "html_url": "https://github.com/ignaciojimenez/ignaciojimenezpi.github.io/security/dependabot/44",
+    "number": 44,
+    "reachability": {
+      "verdict": "disabled"
+    },
+    "security_advisory": {
+      "classification": "general",
+      "cve_id": "CVE-2026-102277",
+      "cvss": {
+        "score": 5.3,
+        "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L"
+      },
+      "cvss_severities": {
+        "cvss_v3": {
+          "score": 5.3,
+          "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L"
+        },
+        "cvss_v4": {
+          "score": 0.0,
+          "vector_string": null
+        }
+      },
+      "cwes": [
+        {
+          "cwe_id": "CWE-400",
+          "name": "Uncontrolled Resource Consumption"
+        },
+        {
+          "cwe_id": "CWE-407",
+          "name": "Inefficient Algorithmic Complexity"
+        }
+      ],
+      "description": "### Summary\n\nExpanding `{a},b}`-shaped input takes time quadratic in the number of literal `}` characters, blocking the event loop.\n\nBash preserves a quirk where a brace group followed by a comma set still expands (`{a},b}`). The parser implements this by rewriting the string and restarting the scan. Each pass absorbs exactly one `}` and re-scans from the beginning, so `n` trailing braces cost `n` full passes.\n\n### Reproduction\n\n```js\nconst build = n => '{a}' + '}'.repeat(n) + ',z}'\n\nfor (const n of [8000, 16000, 32000, 64000, 128000]) {\n  const t = Date.now()\n  expand(build(n))\n  console.log(n, Date.now() - t + 'ms')\n}\n```\n\n| n | input | time | results |\n|---|---|---|---|\n| 8,000 | 8 KB | 110 ms | 2 |\n| 16,000 | 16 KB | 446 ms | 2 |\n| 32,000 | 32 KB | 1.7 s | 2 |\n| 64,000 | 64 KB | 6.9 s | 2 |\n| 128,000 | 128 KB | **27.7 s** | 2 |\n\n`ms/n^2` is flat at ~1.7 and each doubling of `n` costs exactly 4.0x - quadratic. 128 KB of input blocks the event loop for nearly half a minute to produce two results.\n\n### Mechanism\n\nInstrumenting the rewrite branch confirms it runs exactly `n + 1` times, once per literal `}`, each re-scanning the whole string.\n\nThere is a second multiplier. The rewrite replaces the group's closing `}` with the internal `escClose` sentinel, which is `'\\0CLOSE' + Math.random() + '\\0'` - about 25 characters. The working string therefore *grows* by ~25 characters on every pass:\n\n| n | input length | final string length |\n|---|---|---|\n| 1,000 | 1,006 | 26,006 |\n| 8,000 | 8,006 | 208,006 |\n\nSo the input is inflated roughly 26x, and that factor multiplies both the quadratic constant and peak memory. This makes it partly a memory-pressure issue as well as a CPU one.\n\n### Why `max` and `maxLength` do not help\n\nThe cost is in parsing, before the result set exists. The payload yields 2 results regardless of size, so neither bound is ever reached.\n\n### Impact\n\nAn application passing an untrusted pattern to `expand()`, directly or through `minimatch` / `glob`, can have its event loop blocked for tens of seconds by a payload well under minimatch's 65,536-character cap. For a single-threaded Node server that is a full stall, not just a slow request.\n\nDegraded availability rather than a crash - the process recovers once the expansion completes.\n\n### Affected versions\n\nVerified affected on 1.1.18, 2.1.4, 3.0.6 and 5.0.9, all within a few percent of each other (~460-490 ms at n=16,000).\n\n### Patch\n\nThe rewrite loop gets an iteration bound. Past the cap the remaining string is treated as non-expanding and returned literally, consistent with the existing `max` / `maxLength` caps, which truncate rather than throw.\n\nNote this bounds the number of passes, not the cost of each: worst-case work remains proportional to `cap x input length`. The cap is set low enough that the residual is bounded in practice, and far above what any realistic `{a},b}` input needs.\n\n### Severity note\n\nScored 5.3 Medium (`A:L`) for consistency with GHSA-3jxr-9vmj-r5cp, the other algorithmic-complexity advisory on this package (CWE-407), which uses the same vector. The stack-exhaustion advisories on this package score `A:H` because they crash the process outright; this one stalls it.",
+      "epss": {
+        "percentage": 0.00428,
+        "percentile": 0.37119
+      },
+      "ghsa_id": "GHSA-q2hr-2g5m-vwhr",
+      "identifiers": [
+        {
+          "type": "GHSA",
+          "value": "GHSA-q2hr-2g5m-vwhr"
+        },
+        {
+          "type": "CVE",
+          "value": "CVE-2026-102277"
+        }
+      ],
+      "published_at": "2026-09-29T23:45:39Z",
+      "references": [
+        {
+          "url": "https://github.com/juliangruber/brace-expansion/security/advisories/GHSA-q2hr-2g5m-vwhr"
+        },
+        {
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-102277"
+        },
+        {
+          "url": "https://github.com/juliangruber/brace-expansion/commit/33a5ef17b8d800bbfa8c52b14c39043b6aac1a96"
+        },
+        {
+          "url": "https://github.com/juliangruber/brace-expansion/commit/bdff773f98e5988616b7039cc9b508df5d640b22"
+        },
+        {
+          "url": "https://github.com/juliangruber/brace-expansion/commit/c55e67d8d8b1c56a2474afff15c2891166b2d364"
+        },
+        {
+          "url": "https://github.com/juliangruber/brace-expansion/commit/ffdfa3e3806bed17c0874b8f1439b084de354a7e"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-q2hr-2g5m-vwhr"
+        }
+      ],
+      "severity": "medium",
+      "summary": "brace-expansion: Quadratic-time expansion of the `{a},b}` rewrite causes CPU denial of service",
+      "updated_at": "2026-09-29T23:45:39Z",
+      "vulnerabilities": [
+        {
+          "first_patched_version": {
+            "identifier": "5.0.12"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "brace-expansion"
+          },
+          "severity": "medium",
+          "vulnerable_version_range": ">= 4.0.0, < 5.0.12"
+        },
+        {
+          "first_patched_version": {
+            "identifier": "3.0.9"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "brace-expansion"
+          },
+          "severity": "medium",
+          "vulnerable_version_range": ">= 3.0.0, < 3.0.9"
+        },
+        {
+          "first_patched_version": {
+            "identifier": "2.1.7"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "brace-expansion"
+          },
+          "severity": "medium",
+          "vulnerable_version_range": ">= 2.0.0, < 2.1.7"
+        },
+        {
+          "first_patched_version": {
+            "identifier": "1.1.21"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "brace-expansion"
+          },
+          "severity": "medium",
+          "vulnerable_version_range": "< 1.1.21"
+        }
+      ],
+      "withdrawn_at": null
+    },
+    "security_vulnerability": {
+      "first_patched_version": {
+        "identifier": "2.1.7"
+      },
+      "package": {
+        "ecosystem": "npm",
+        "name": "brace-expansion"
+      },
+      "severity": "medium",
+      "vulnerable_version_range": ">= 2.0.0, < 2.1.7"
+    },
+    "state": "fixed",
+    "updated_at": "2026-11-04T21:30:02Z",
+    "url": "https://api.github.com/repos/ignaciojimenez/ignaciojimenezpi.github.io/dependabot/alerts/44"
+  },
+  {
+    "assignees": [],
+    "auto_dismissed_at": null,
+    "created_at": "2026-10-14T00:54:50Z",
+    "dependency": {
+      "manifest_path": "package-lock.json",
+      "package": {
+        "ecosystem": "npm",
+        "name": "shell-quote"
+      },
+      "relationship": "transitive",
+      "scope": "development",
+      "version_requirement": "1.10.0"
+    },
+    "dismissal_request": null,
+    "dismissed_at": null,
+    "dismissed_by": null,
+    "dismissed_comment": null,
+    "dismissed_reason": null,
+    "fixed_at": "2026-11-04T21:30:02Z",
+    "html_url": "https://github.com/ignaciojimenez/ignaciojimenezpi.github.io/security/dependabot/45",
+    "number": 45,
+    "reachability": {
+      "verdict": "disabled"
+    },
+    "security_advisory": {
+      "classification": "general",
+      "cve_id": "CVE-2026-102422",
+      "cvss": {
+        "score": 8.1,
+        "vector_string": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H"
+      },
+      "cvss_severities": {
+        "cvss_v3": {
+          "score": 8.1,
+          "vector_string": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H"
+        },
+        "cvss_v4": {
+          "score": 9.2,
+          "vector_string": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"
+        }
+      },
+      "cwes": [
+        {
+          "cwe_id": "CWE-78",
+          "name": "Improper Neutralization of Special Elements used in an OS Command"
+        }
+      ],
+      "description": "### Impact\n\n`quote()` emits a `{ comment }` token as `#` followed by its text, which comments out the rest of the shell line, including the opening quote of any later string token. A line terminator in that later string ends the comment, and the rest of the string is parsed as shell input:\n\n```js\nquote(['echo', 'ok', { comment: 'x' }, 'a\\nid;#']);\n// echo ok #x 'a\n// id;#'\n```\n\nPassed to `sh`, `bash`, `dash`, `ksh`, or `zsh`, this runs `id`.\n\n`parse()` emits a comment token for a `#` in the middle of a word (for example `http://example.com/#frag`), so callers that combine `parse()` output with another untrusted string, such as `quote(parse(untrustedCommand).concat(untrustedArg))`, are affected. The fix for CVE-2026-9277 rejected line terminators in the comment's own text, but not in the tokens after it.\n\nExploitation requires an attacker-controlled string containing a line terminator that follows a `{ comment }` token in the same `quote()` call.\n\n### Patches\n\nFixed in v1.11.0: `quote()` throws a `TypeError` when a string after a `{ comment }` token contains a line terminator (`\\n`, `\\r`, U+2028, or U+2029).\n\n### Workarounds\n\nDrop every token after a `{ comment }` token before calling `quote()`, or reject line terminators in untrusted strings. Separately, do not append other shell text after `quote()` output that contains a comment, since the comment swallows it.",
+      "epss": {
+        "percentage": 0.00378,
+        "percentile": 0.31501
+      },
+      "ghsa_id": "GHSA-pqg4-j6r4-53mv",
+      "identifiers": [
+        {
+          "type": "GHSA",
+          "value": "GHSA-pqg4-j6r4-53mv"
+        },
+        {
+          "type": "CVE",
+          "value": "CVE-2026-102422"
+        }
+      ],
+      "published_at": "2026-10-06T13:40:36Z",
+      "references": [
+        {
+          "url": "https://github.com/ljharb/shell-quote/security/advisories/GHSA-pqg4-j6r4-53mv"
+        },
+        {
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-102422"
+        },
+        {
+          "url": "https://github.com/ljharb/shell-quote/commit/6002b2ed90c6b83095eb272b6b0adaf3a172b0bc"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-pqg4-j6r4-53mv"
+        }
+      ],
+      "severity": "critical",
+      "summary": "shell-quote: `quote()` command injection via a line terminator in a token after a `{ comment }` token",
+      "updated_at": "2026-10-06T13:40:37Z",
+      "vulnerabilities": [
+        {
+          "first_patched_version": {
+            "identifier": "1.11.0"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "shell-quote"
+          },
+          "severity": "critical",
+          "vulnerable_version_range": ">= 1.8.4, < 1.11.0"
+        }
+      ],
+      "withdrawn_at": null
+    },
+    "security_vulnerability": {
+      "first_patched_version": {
+        "identifier": "1.11.0"
+      },
+      "package": {
+        "ecosystem": "npm",
+        "name": "shell-quote"
+      },
+      "severity": "critical",
+      "vulnerable_version_range": ">= 1.8.4, < 1.11.0"
+    },
+    "state": "fixed",
+    "updated_at": "2026-11-04T21:30:02Z",
+    "url": "https://api.github.com/repos/ignaciojimenez/ignaciojimenezpi.github.io/dependabot/alerts/45"
+  },
+  {
+    "assignees": [],
+    "auto_dismissed_at": null,
+    "created_at": "2026-10-16T23:38:47Z",
+    "dependency": {
+      "manifest_path": "package-lock.json",
+      "package": {
+        "ecosystem": "npm",
+        "name": "source-map-js"
+      },
+      "relationship": "transitive",
+      "scope": "development",
+      "version_requirement": "1.2.1"
+    },
+    "dismissal_request": null,
+    "dismissed_at": null,
+    "dismissed_by": null,
+    "dismissed_comment": null,
+    "dismissed_reason": null,
+    "fixed_at": "2026-11-04T21:30:02Z",
+    "html_url": "https://github.com/ignaciojimenez/ignaciojimenezpi.github.io/security/dependabot/46",
+    "number": 46,
+    "reachability": {
+      "verdict": "disabled"
+    },
+    "security_advisory": {
+      "classification": "general",
+      "cve_id": "CVE-2026-93749",
+      "cvss": {
+        "score": 7.5,
+        "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+      },
+      "cvss_severities": {
+        "cvss_v3": {
+          "score": 7.5,
+          "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+        },
+        "cvss_v4": {
+          "score": 8.7,
+          "vector_string": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:H/SC:N/SI:N/SA:N"
+        }
+      },
+      "cwes": [
+        {
+          "cwe_id": "CWE-1284",
+          "name": "Improper Validation of Specified Quantity in Input"
+        }
+      ],
+      "description": "source-map-js through 1.2.1 fails to validate the per-section offset line value in indexed source maps, allowing attackers to specify arbitrary numeric values. Attackers can supply extremely large offset line values that cause synchronous event loop blocking for extended periods, preventing the service from handling other requests.",
+      "epss": {
+        "percentage": 0.00455,
+        "percentile": 0.39547
+      },
+      "ghsa_id": "GHSA-68fv-2mgg-jv7q",
+      "identifiers": [
+        {
+          "type": "GHSA",
+          "value": "GHSA-68fv-2mgg-jv7q"
+        },
+        {
+          "type": "CVE",
+          "value": "CVE-2026-93749"
+        }
+      ],
+      "published_at": "2026-09-18T18:31:44Z",
+      "references": [
+        {
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-93749"
+        },
+        {
+          "url": "https://github.com/7rulnik/source-map-js/issues/76"
+        },
+        {
+          "url": "https://github.com/7rulnik/source-map-js"
+        },
+        {
+          "url": "https://github.com/7rulnik/source-map-js/blob/c1cd8904bb7bd0c7fb5879fcda48134d82a27934/lib/source-node.js#L115-L118"
+        },
+        {
+          "url": "https://www.vulncheck.com/advisories/source-map-js-through-1.2.1-event-loop-denial-of-service"
+        },
+        {
+          "url": "https://github.com/7rulnik/source-map-js/pull/79"
+        },
+        {
+          "url": "https://github.com/7rulnik/source-map-js/commit/cf7658058ceeaa8619d5ae0ec90be6905209d016"
+        },
+        {
+          "url": "https://github.com/7rulnik/source-map-js/releases/tag/v1.2.2"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-68fv-2mgg-jv7q"
+        }
+      ],
+      "severity": "high",
+      "summary": "source-map-js allows event-loop denial of service through indexed source-map section offsets",
+      "updated_at": "2026-10-05T23:31:22Z",
+      "vulnerabilities": [
+        {
+          "first_patched_version": {
+            "identifier": "1.2.2"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "source-map-js"
+          },
+          "severity": "high",
+          "vulnerable_version_range": ">= 1.0.0, < 1.2.2"
+        }
+      ],
+      "withdrawn_at": null
+    },
+    "security_vulnerability": {
+      "first_patched_version": {
+        "identifier": "1.2.2"
+      },
+      "package": {
+        "ecosystem": "npm",
+        "name": "source-map-js"
+      },
+      "severity": "high",
+      "vulnerable_version_range": ">= 1.0.0, < 1.2.2"
+    },
+    "state": "fixed",
+    "updated_at": "2026-11-04T21:30:02Z",
+    "url": "https://api.github.com/repos/ignaciojimenez/ignaciojimenezpi.github.io/dependabot/alerts/46"
+  },
+  {
+    "assignees": [],
+    "auto_dismissed_at": null,
+    "created_at": "2026-10-30T20:57:49Z",
+    "dependency": {
+      "manifest_path": "package-lock.json",
+      "package": {
+        "ecosystem": "npm",
+        "name": "postcss-selector-parser"
+      },
+      "relationship": "transitive",
+      "scope": "development",
+      "version_requirement": "6.1.4"
+    },
+    "dismissal_request": null,
+    "dismissed_at": null,
+    "dismissed_by": null,
+    "dismissed_comment": null,
+    "dismissed_reason": null,
+    "fixed_at": null,
+    "html_url": "https://github.com/ignaciojimenez/ignaciojimenezpi.github.io/security/dependabot/90",
+    "number": 90,
+    "reachability": {
+      "verdict": "disabled"
+    },
+    "security_advisory": {
+      "classification": "general",
+      "cve_id": "CVE-2026-104844",
+      "cvss": {
+        "score": 5.9,
+        "vector_string": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H"
+      },
+      "cvss_severities": {
+        "cvss_v3": {
+          "score": 5.9,
+          "vector_string": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H"
+        },
+        "cvss_v4": {
+          "score": 0.0,
+          "vector_string": null
+        }
+      },
+      "cwes": [
+        {
+          "cwe_id": "CWE-400",
+          "name": "Uncontrolled Resource Consumption"
+        },
+        {
+          "cwe_id": "CWE-407",
+          "name": "Inefficient Algorithmic Complexity"
+        }
+      ],
+      "description": "### Impact\n\n`.` and `#` are not word delimiters in the tokenizer, so a flat selector such as\n`.a.a.a...` reaches `splitWord()` as a single word token carrying n class or id\nindexes. Three passes scanned those index arrays linearly for every index,\nmaking the parse O(n^2) in the number of indexes rather than in input length:\n`uniqs()`, the `indices.forEach` loop, and the Sass-interpolation filter.\nParsing a 400 KB flat selector took ~34 s on a modern laptop, fully occupying a\nsingle thread. A benign selector of identical byte size parses in tens of\nmilliseconds, so the cost is driven by the index count, not the input size.\nThe nesting depth of such a selector is 0, so the `maxNestingDepth` guard added\nin 7.1.3 offers no protection.\n\nReachability is deployment dependent. Only consumers that parse untrusted,\nattacker-supplied selectors synchronously in a request path are exposed, for\nexample CSS sanitizers, CSS-in-JS services and online playgrounds. Ordinary\nbuild-time use on trusted sources is not affected.\n\n### Patches\n\nFixed in 7.1.6. The three passes now use Set membership tests, making parsing\nlinear in the number of indexes. There is no behaviour change: parsing is\nbyte-identical on a differential corpus of 8413 selectors.\n\n### Workarounds\n\nCap the size of selectors accepted from untrusted sources before parsing.",
+      "epss": {
+        "percentage": 0.00389,
+        "percentile": 0.32699
+      },
+      "ghsa_id": "GHSA-rj75-hqrm-r3gf",
+      "identifiers": [
+        {
+          "type": "GHSA",
+          "value": "GHSA-rj75-hqrm-r3gf"
+        },
+        {
+          "type": "CVE",
+          "value": "CVE-2026-104844"
+        }
+      ],
+      "published_at": "2026-10-05T22:53:54Z",
+      "references": [
+        {
+          "url": "https://github.com/postcss/postcss-selector-parser/security/advisories/GHSA-rj75-hqrm-r3gf"
+        },
+        {
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-104844"
+        },
+        {
+          "url": "https://github.com/postcss/postcss-selector-parser/commit/62b191792df0a0bc56062e5a875bc74aae2a51cd"
+        },
+        {
+          "url": "https://github.com/postcss/postcss-selector-parser/releases/tag/7.1.6"
+        },
+        {
+          "url": "https://github.com/postcss/postcss-selector-parser/pull/346"
+        },
+        {
+          "url": "https://github.com/postcss/postcss-selector-parser/commit/70b0779c843462197380d25daa02d1528bf7eae5"
+        },
+        {
+          "url": "https://github.com/postcss/postcss-selector-parser/releases/tag/6.1.5"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-rj75-hqrm-r3gf"
+        }
+      ],
+      "severity": "medium",
+      "summary": "PostCSS: Quadratic complexity in flat selector parsing allows CPU exhaustion",
+      "updated_at": "2026-10-26T14:07:57Z",
+      "vulnerabilities": [
+        {
+          "first_patched_version": {
+            "identifier": "7.1.6"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "postcss-selector-parser"
+          },
+          "severity": "medium",
+          "vulnerable_version_range": ">= 7.0.0, < 7.1.6"
+        },
+        {
+          "first_patched_version": {
+            "identifier": "6.1.5"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "postcss-selector-parser"
+          },
+          "severity": "medium",
+          "vulnerable_version_range": "< 6.1.5"
+        }
+      ],
+      "withdrawn_at": null
+    },
+    "security_vulnerability": {
+      "first_patched_version": {
+        "identifier": "6.1.5"
+      },
+      "package": {
+        "ecosystem": "npm",
+        "name": "postcss-selector-parser"
+      },
+      "severity": "medium",
+      "vulnerable_version_range": "< 6.1.5"
+    },
+    "state": "open",
+    "updated_at": "2026-10-30T20:57:49Z",
+    "url": "https://api.github.com/repos/ignaciojimenez/ignaciojimenezpi.github.io/dependabot/alerts/90"
+  }
+]

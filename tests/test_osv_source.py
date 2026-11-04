@@ -147,6 +147,7 @@ from pathlib import Path
 
 import pytest
 
+from harness.models import Lane
 from harness.sources.osv import OsvSource, _body, _ours, go_runtime
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -304,7 +305,8 @@ def test_a_runtime_in_a_local_manifest_goes_silent(monkeypatch):
     src = _source(monkeypatch, {"scripts/go.mod": "go 1.26.0\n"}, name="pastebin-worker")
     monkeypatch.setattr(src, "_osv_batch", lambda deps: [[{"id": "GO-1"}]])
     monkeypatch.setattr(src, "_details", lambda vulns: vulns)
-    assert src.findings() == []
+    [finding] = src.findings()
+    assert finding.lane is Lane.SILENT, "still true, and it must open nothing"
     [(dep, why)] = src.silent
     assert dep.manifest == "scripts/go.mod" and "local" in why
 
