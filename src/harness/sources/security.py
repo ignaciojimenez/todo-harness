@@ -153,6 +153,20 @@ def route(a: Alert) -> tuple[Lane, str]:
     return Lane.PLAN, "unclassified — defaulting to human review"
 
 
+_URGENCY = {Lane.SILENT: 0, Lane.PLAN: 1, Lane.PAGE: 2}
+
+
+def decide(members: list[Alert]) -> tuple[Alert, Lane, str]:
+    """The alert that decides a group's lane: its most urgent, then most exploited.
+
+    🔴 Never just the first. GitHub lists alerts newest first, so the first alert
+    is an accident of when each advisory was published, and judging the group by
+    it left an exploited advisory silent unless it happened to be the newest.
+    """
+    head = max(members, key=lambda a: (_URGENCY[route(a)[0]], a.epss or 0.0))
+    return (head, *route(head))
+
+
 def group_key(a: Alert) -> tuple:
     """What counts as *one piece of work*.
 
@@ -174,10 +188,14 @@ def marker_url(a: Alert) -> str:
 
     Points at the filtered alert list rather than one alert, so it stays valid
     as individual alerts in the group are fixed or dismissed.
+
+    The package is casefolded, as in `group_key`: GitHub names one package both
+    `Pillow` and `pillow`, and a marker that follows the deciding alert's casing
+    gave one group two identities, opening PER-143 and closing PER-141.
     """
     base = f"https://github.com/{a.repo}/security"
     if a.kind == "dependabot":
-        q = urllib.parse.quote_plus(f"is:open package:{a.package}")
+        q = urllib.parse.quote_plus(f"is:open package:{(a.package or '').casefold()}")
         return f"{base}/dependabot?q={q}"
     if a.kind == "code":
         q = urllib.parse.quote_plus(f"is:open rule:{a.title}")
@@ -392,10 +410,9 @@ class SecuritySource:
         self.silent, self.paged = [], []
         out: list[Finding] = []
         for members in grouped.values():
-            head = members[0]
-            lane, why = route(head)
+            head, lane, why = decide(members)
             if lane is Lane.SILENT:
-                self.silent.extend((m, why) for m in members)
+                self.silent.extend((m, route(m)[1]) for m in members)
                 # Still true, so it is still emitted: reconcile() must not read
                 # a lane change as absence. See `Lane.SILENT`.
                 out.append(Finding(

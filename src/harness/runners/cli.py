@@ -96,6 +96,8 @@ def describe(a: Action) -> str:
                 bits.append("title")
             if a.body:
                 bits.append("body")
+            if a.page:
+                bits.append("page")
             return f"UPDATE {a.issue_id}  {' '.join(bits)}   ({a.why})"
         case Close():
             return f"CLOSE  {a.issue_id}   ({a.why})"
@@ -106,6 +108,12 @@ def describe(a: Action) -> str:
         case MarkPresent():
             return f"BACK   {a.issue_id}   ({a.why})"
     raise AssertionError(f"unhandled action {type(a).__name__}")
+
+
+def _page_of(a: Action) -> Finding | None:
+    if isinstance(a, Open) and a.finding.lane is Lane.PAGE:
+        return a.finding
+    return a.page if isinstance(a, Update) else None
 
 
 def _target(a: Action) -> str:
@@ -235,17 +243,18 @@ def main(
             for a in actions:
                 tracker.apply(a)
                 applied += 1
-                # Page once, on the sweep that opens the issue — and only after
-                # it exists. The open issue is the record that the page went
-                # out, so the next sweep finds it and stays quiet; no second
-                # store to keep in step.
-                if isinstance(a, Open) and a.finding.lane is Lane.PAGE:
+                # Page once, on the sweep that opens or escalates the issue — and
+                # only after that is written. The issue is the record that the
+                # page went out, so the next sweep finds it and stays quiet; no
+                # second store to keep in step.
+                page = _page_of(a)
+                if page is not None:
                     try:
-                        notifier.page(a.finding)
+                        notifier.page(page)
                     except Exception as e:  # noqa: BLE001 - reported, below
                         degraded += 1
                         paging_failed = True
-                        notes.append(f"PAGE NOT SENT  {a.finding.key} — {e}")
+                        notes.append(f"PAGE NOT SENT  {page.key} — {e}")
 
         if notes:
             print("\nleft alone, needs a human:")
