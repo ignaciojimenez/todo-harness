@@ -48,7 +48,7 @@ from typing import Iterable
 from ..models import Action, Finding, IssueQuery, Lane
 from ..ports import Tracker
 from ..reconcile import Policy, reconcile
-from .security import SecuritySource, exposure_of
+from .security import TRANSPORT_ERRORS, SecuritySource, exposure_of
 
 OSV_BATCH = "https://api.osv.dev/v1/querybatch"
 OSV_QUERY = "https://api.osv.dev/v1/query"
@@ -364,8 +364,15 @@ class OsvSource:
                 OSV_BATCH, data=payload,
                 headers={"Content-Type": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=60) as r:
-                results = json.loads(r.read()).get("results", [])
+            try:
+                with urllib.request.urlopen(req, timeout=60) as r:
+                    results = json.loads(r.read()).get("results", [])
+            except TRANSPORT_ERRORS as e:
+                # Answers pair with deps by position, so a lost chunk keeps its
+                # place. The failure is what stops its emptiness reading as clean.
+                self._gh.failures.append(f"osv querybatch → {type(e).__name__}")
+                out.extend([] for _ in chunk)
+                continue
             out.extend(x.get("vulns") or [] for x in results)
         return out
 

@@ -1,0 +1,765 @@
+[
+  {
+    "assignees": [],
+    "auto_dismissed_at": null,
+    "created_at": "2026-11-04T07:15:41Z",
+    "dependency": {
+      "manifest_path": "pnpm-lock.yaml",
+      "package": {
+        "ecosystem": "npm",
+        "name": "undici"
+      },
+      "relationship": "transitive",
+      "scope": "development",
+      "version_requirement": "7.29.1"
+    },
+    "dismissal_request": null,
+    "dismissed_at": null,
+    "dismissed_by": null,
+    "dismissed_comment": null,
+    "dismissed_reason": null,
+    "fixed_at": null,
+    "html_url": "https://github.com/ignaciojimenez/pastebin-worker/security/dependabot/126",
+    "number": 126,
+    "reachability": {
+      "verdict": "disabled"
+    },
+    "security_advisory": {
+      "classification": "general",
+      "cve_id": "CVE-2026-109383",
+      "cvss": {
+        "score": 7.4,
+        "vector_string": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+      },
+      "cvss_severities": {
+        "cvss_v3": {
+          "score": 7.4,
+          "vector_string": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+        },
+        "cvss_v4": {
+          "score": 0.0,
+          "vector_string": null
+        }
+      },
+      "cwes": [
+        {
+          "cwe_id": "CWE-295",
+          "name": "Improper Certificate Validation"
+        }
+      ],
+      "description": "### Impact\n\nundici's `Agent` passes its constructor options through a JSON-based deep clone (`JSON.parse(JSON.stringify(...))`) before forwarding them to each per-origin `Pool`. JSON cannot represent functions, so a caller-supplied `tls` option containing a `checkServerIdentity` callback is silently dropped before it reaches the TLS layer. As a result, a TLS peer whose certificate a custom `checkServerIdentity` was written to reject, but which passes Node's default hostname and chain checks, is silently accepted when the request is made through `Agent`. Because `Agent` is the default dispatcher behind `request`, `fetch`, and `setGlobalDispatcher`, this is the path most applications use. `EnvHttpProxyAgent` is also affected on its direct and `NO_PROXY` routes, which delegate to an internal `Agent`.\n\nOnly applications that pass a function-valued `tls` option (such as a custom `checkServerIdentity` for certificate or public-key pinning) are affected. Passing the same options through `connect` is not affected. This is the `Agent` counterpart of the `BalancedPool` certificate validation bypass fixed in CVE-2026-84961.\n\n### Patches\n\nUpgrade to undici `6.29.1`, `7.30.1`, or `8.12.2`. `Agent` now preserves the `tls` option outside the JSON clone, so custom TLS verification callbacks are forwarded to each origin unchanged.\n\n### Workarounds\n\nPass the TLS options through `connect` instead of `tls`. For proxied `EnvHttpProxyAgent` destinations, use `requestTls` / `proxyTls`.",
+      "epss": {
+        "percentage": 0.00184,
+        "percentile": 0.07547
+      },
+      "ghsa_id": "GHSA-2m5v-pch6-74hx",
+      "identifiers": [
+        {
+          "type": "GHSA",
+          "value": "GHSA-2m5v-pch6-74hx"
+        },
+        {
+          "type": "CVE",
+          "value": "CVE-2026-109383"
+        }
+      ],
+      "published_at": "2026-10-27T19:02:26Z",
+      "references": [
+        {
+          "url": "https://github.com/nodejs/undici/security/advisories/GHSA-2m5v-pch6-74hx"
+        },
+        {
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-109383"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/commit/04cb74b1db131ff8f5b4557dce811cbf5f4664b4"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/commit/8c59f6b302898cb2e9b0f7962cd7212b6e597c9f"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/commit/f75eac00ac177f7b2e6c8bfbd52d4113164286e6"
+        },
+        {
+          "url": "https://cna.openjsf.org/security-advisories.html"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/releases/tag/v6.29.1"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/releases/tag/v7.30.1"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/releases/tag/v8.12.2"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-2m5v-pch6-74hx"
+        }
+      ],
+      "severity": "high",
+      "summary": "undici vulnerable to TLS certificate validation bypass via dropped tls options in Agent",
+      "updated_at": "2026-10-27T19:02:27Z",
+      "vulnerabilities": [
+        {
+          "first_patched_version": {
+            "identifier": "6.29.1"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "undici"
+          },
+          "severity": "high",
+          "vulnerable_version_range": ">= 4.0.0, < 6.29.1"
+        },
+        {
+          "first_patched_version": {
+            "identifier": "7.30.1"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "undici"
+          },
+          "severity": "high",
+          "vulnerable_version_range": ">= 7.0.0, < 7.30.1"
+        },
+        {
+          "first_patched_version": {
+            "identifier": "8.12.2"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "undici"
+          },
+          "severity": "high",
+          "vulnerable_version_range": ">= 8.0.0, < 8.12.2"
+        }
+      ],
+      "withdrawn_at": null
+    },
+    "security_vulnerability": {
+      "first_patched_version": {
+        "identifier": "7.30.1"
+      },
+      "package": {
+        "ecosystem": "npm",
+        "name": "undici"
+      },
+      "severity": "high",
+      "vulnerable_version_range": ">= 7.0.0, < 7.30.1"
+    },
+    "state": "open",
+    "updated_at": "2026-11-04T07:15:41Z",
+    "url": "https://api.github.com/repos/ignaciojimenez/pastebin-worker/dependabot/alerts/126"
+  },
+  {
+    "assignees": [],
+    "auto_dismissed_at": null,
+    "created_at": "2026-11-04T07:13:51Z",
+    "dependency": {
+      "manifest_path": "pnpm-lock.yaml",
+      "package": {
+        "ecosystem": "npm",
+        "name": "undici"
+      },
+      "relationship": "transitive",
+      "scope": "development",
+      "version_requirement": "7.29.1"
+    },
+    "dismissal_request": null,
+    "dismissed_at": null,
+    "dismissed_by": null,
+    "dismissed_comment": null,
+    "dismissed_reason": null,
+    "fixed_at": null,
+    "html_url": "https://github.com/ignaciojimenez/pastebin-worker/security/dependabot/125",
+    "number": 125,
+    "reachability": {
+      "verdict": "disabled"
+    },
+    "security_advisory": {
+      "classification": "general",
+      "cve_id": "CVE-2026-109932",
+      "cvss": {
+        "score": 5.9,
+        "vector_string": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H"
+      },
+      "cvss_severities": {
+        "cvss_v3": {
+          "score": 5.9,
+          "vector_string": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H"
+        },
+        "cvss_v4": {
+          "score": 0.0,
+          "vector_string": null
+        }
+      },
+      "cwes": [
+        {
+          "cwe_id": "CWE-400",
+          "name": "Uncontrolled Resource Consumption"
+        },
+        {
+          "cwe_id": "CWE-405",
+          "name": "Asymmetric Resource Consumption (Amplification)"
+        },
+        {
+          "cwe_id": "CWE-770",
+          "name": "Allocation of Resources Without Limits or Throttling"
+        }
+      ],
+      "description": "### Impact\n\nundici's WebSocket client (including Node.js's bundled `globalThis.WebSocket`) can be driven to exhaust process memory by a malicious or compromised WebSocket server. For every PING frame received, the receiver automatically writes a PONG response to the socket and ignores the `false` return value from `socket.write()`, which is a backpressure signal, so a server that streams small PING frames while never reading the client's PONGs makes the outbound write queue and heap grow without bound until the Node.js process runs out of memory and terminates. The attack is remote and unauthenticated, needs only a normal WebSocket connection, and is asymmetric: small inbound PINGs produce a much larger retained outbound queue. Availability is the only impact. undici 5.x, 6.x, 7.x, and 8.x are affected; the WebSocket client was introduced in 5.15.0.\n\n### Patches\n\nUpgrade to `6.29.1`, `7.30.1`, or `8.12.2`, which pause WebSocket frame parsing when the automatic PONG response hits socket backpressure and resume on drain, bounding the outbound queue.\n\n### Workarounds\n\nNone.",
+      "epss": {
+        "percentage": 0.00321,
+        "percentile": 0.24857
+      },
+      "ghsa_id": "GHSA-9fm3-97px-rjf6",
+      "identifiers": [
+        {
+          "type": "GHSA",
+          "value": "GHSA-9fm3-97px-rjf6"
+        },
+        {
+          "type": "CVE",
+          "value": "CVE-2026-109932"
+        }
+      ],
+      "published_at": "2026-10-27T19:02:15Z",
+      "references": [
+        {
+          "url": "https://github.com/nodejs/undici/security/advisories/GHSA-9fm3-97px-rjf6"
+        },
+        {
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-109932"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/commit/39f93e142df03e559fe7c3d1fc7fba9beee2c185"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/commit/53944624462b6797560288c55dbd8c66857bb495"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/commit/b217373bb024cd93f85eb5b3ffd25684855f60f8"
+        },
+        {
+          "url": "https://cna.openjsf.org/security-advisories.html"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/releases/tag/v6.29.1"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/releases/tag/v7.30.1"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/releases/tag/v8.12.2"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-9fm3-97px-rjf6"
+        }
+      ],
+      "severity": "medium",
+      "summary": "undici WebSocket client vulnerable to Denial of Service via unbounded automatic PONG buffering",
+      "updated_at": "2026-10-27T19:02:17Z",
+      "vulnerabilities": [
+        {
+          "first_patched_version": {
+            "identifier": "6.29.1"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "undici"
+          },
+          "severity": "medium",
+          "vulnerable_version_range": ">= 5.15.0, < 6.29.1"
+        },
+        {
+          "first_patched_version": {
+            "identifier": "7.30.1"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "undici"
+          },
+          "severity": "medium",
+          "vulnerable_version_range": ">= 7.0.0, < 7.30.1"
+        },
+        {
+          "first_patched_version": {
+            "identifier": "8.12.2"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "undici"
+          },
+          "severity": "medium",
+          "vulnerable_version_range": ">= 8.0.0, < 8.12.2"
+        }
+      ],
+      "withdrawn_at": null
+    },
+    "security_vulnerability": {
+      "first_patched_version": {
+        "identifier": "7.30.1"
+      },
+      "package": {
+        "ecosystem": "npm",
+        "name": "undici"
+      },
+      "severity": "medium",
+      "vulnerable_version_range": ">= 7.0.0, < 7.30.1"
+    },
+    "state": "open",
+    "updated_at": "2026-11-04T07:13:51Z",
+    "url": "https://api.github.com/repos/ignaciojimenez/pastebin-worker/dependabot/alerts/125"
+  },
+  {
+    "assignees": [],
+    "auto_dismissed_at": null,
+    "created_at": "2026-11-04T07:13:07Z",
+    "dependency": {
+      "manifest_path": "pnpm-lock.yaml",
+      "package": {
+        "ecosystem": "npm",
+        "name": "undici"
+      },
+      "relationship": "transitive",
+      "scope": "development",
+      "version_requirement": "7.29.1"
+    },
+    "dismissal_request": null,
+    "dismissed_at": null,
+    "dismissed_by": null,
+    "dismissed_comment": null,
+    "dismissed_reason": null,
+    "fixed_at": null,
+    "html_url": "https://github.com/ignaciojimenez/pastebin-worker/security/dependabot/124",
+    "number": 124,
+    "reachability": {
+      "verdict": "disabled"
+    },
+    "security_advisory": {
+      "classification": "general",
+      "cve_id": "CVE-2026-87018",
+      "cvss": {
+        "score": 7.5,
+        "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+      },
+      "cvss_severities": {
+        "cvss_v3": {
+          "score": 7.5,
+          "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+        },
+        "cvss_v4": {
+          "score": 0.0,
+          "vector_string": null
+        }
+      },
+      "cwes": [
+        {
+          "cwe_id": "CWE-248",
+          "name": "Uncaught Exception"
+        },
+        {
+          "cwe_id": "CWE-617",
+          "name": "Reachable Assertion"
+        }
+      ],
+      "description": "## Impact\n\nundici crashes the client process when a TLS 1.2 server renegotiates after the connection is established and presents a different, CA-trusted certificate whose hostname does not match the requested host. Node.js re-runs hostname verification on the renegotiated handshake and destroys the socket with `ERR_TLS_CERT_ALTNAME_INVALID`. undici's established socket error handler asserted that this error code could never occur, so the peer-controlled error became an uncaught `AssertionError` that terminates the Node.js process. Both the HTTP/1.1 and HTTP/2 paths are affected.\n\nA malicious or compromised HTTPS endpoint reached through undici or the global `fetch()` can crash the client with a single server-initiated renegotiation, taking down all in-flight requests and background work in the process. Only TLS 1.2 is affected, because TLS 1.3 does not support renegotiation. Exploitation does not require a CA compromise: the attacker controls the endpoint and can present two ordinary valid certificates, the first matching the requested URL and the second intentionally not matching it.\n\n## Patches\n\nUpgrade to undici 6.29.1, 7.30.1, or 8.12.2.\n\n## Workarounds\n\nRestrict outbound connections to TLS 1.3, for example by setting `connect: { minVersion: 'TLSv1.3', maxVersion: 'TLSv1.3' }` on the client or agent, so that renegotiation cannot occur, when the target endpoints support TLS 1.3.",
+      "epss": {
+        "percentage": 0.00187,
+        "percentile": 0.07843
+      },
+      "ghsa_id": "GHSA-qrxm-fqhp-jwvm",
+      "identifiers": [
+        {
+          "type": "GHSA",
+          "value": "GHSA-qrxm-fqhp-jwvm"
+        },
+        {
+          "type": "CVE",
+          "value": "CVE-2026-87018"
+        }
+      ],
+      "published_at": "2026-10-27T19:02:21Z",
+      "references": [
+        {
+          "url": "https://github.com/nodejs/undici/security/advisories/GHSA-qrxm-fqhp-jwvm"
+        },
+        {
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-87018"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/commit/12cfd96c3f430897656e3edc1c5e02be8c1cd309"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/commit/b40fbfc0651703cf9fa9f6ced68b679f28d8bb28"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/commit/e257e9f8fb42eedd50727b9cf65e548c8925e4a8"
+        },
+        {
+          "url": "https://cna.openjsf.org/security-advisories.html"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/releases/tag/v6.29.1"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/releases/tag/v7.30.1"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/releases/tag/v8.12.2"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-qrxm-fqhp-jwvm"
+        }
+      ],
+      "severity": "high",
+      "summary": "undici vulnerable to Denial of Service via TLS 1.2 certificate-changing renegotiation",
+      "updated_at": "2026-10-27T19:02:22Z",
+      "vulnerabilities": [
+        {
+          "first_patched_version": {
+            "identifier": "6.29.1"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "undici"
+          },
+          "severity": "high",
+          "vulnerable_version_range": ">= 4.2.1, < 6.29.1"
+        },
+        {
+          "first_patched_version": {
+            "identifier": "7.30.1"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "undici"
+          },
+          "severity": "high",
+          "vulnerable_version_range": ">= 7.0.0, < 7.30.1"
+        },
+        {
+          "first_patched_version": {
+            "identifier": "8.12.2"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "undici"
+          },
+          "severity": "high",
+          "vulnerable_version_range": ">= 8.0.0, < 8.12.2"
+        }
+      ],
+      "withdrawn_at": null
+    },
+    "security_vulnerability": {
+      "first_patched_version": {
+        "identifier": "7.30.1"
+      },
+      "package": {
+        "ecosystem": "npm",
+        "name": "undici"
+      },
+      "severity": "high",
+      "vulnerable_version_range": ">= 7.0.0, < 7.30.1"
+    },
+    "state": "open",
+    "updated_at": "2026-11-04T07:13:07Z",
+    "url": "https://api.github.com/repos/ignaciojimenez/pastebin-worker/dependabot/alerts/124"
+  },
+  {
+    "assignees": [],
+    "auto_dismissed_at": null,
+    "created_at": "2026-11-04T07:12:21Z",
+    "dependency": {
+      "manifest_path": "pnpm-lock.yaml",
+      "package": {
+        "ecosystem": "npm",
+        "name": "undici"
+      },
+      "relationship": "transitive",
+      "scope": "development",
+      "version_requirement": "7.29.1"
+    },
+    "dismissal_request": null,
+    "dismissed_at": null,
+    "dismissed_by": null,
+    "dismissed_comment": null,
+    "dismissed_reason": null,
+    "fixed_at": null,
+    "html_url": "https://github.com/ignaciojimenez/pastebin-worker/security/dependabot/123",
+    "number": 123,
+    "reachability": {
+      "verdict": "disabled"
+    },
+    "security_advisory": {
+      "classification": "general",
+      "cve_id": "CVE-2026-109829",
+      "cvss": {
+        "score": 7.4,
+        "vector_string": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+      },
+      "cvss_severities": {
+        "cvss_v3": {
+          "score": 7.4,
+          "vector_string": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+        },
+        "cvss_v4": {
+          "score": 0.0,
+          "vector_string": null
+        }
+      },
+      "cwes": [
+        {
+          "cwe_id": "CWE-346",
+          "name": "Origin Validation Error"
+        },
+        {
+          "cwe_id": "CWE-524",
+          "name": "Use of Cache Containing Sensitive Information"
+        }
+      ],
+      "description": "### Impact\n\nWhen an originless `Agent` composes the redirect and cache interceptors as `compose(redirect(), cache())` with a shared cache (`type: 'shared'`), the cache builds its key from the original request URL before the redirect handler changes the origin. The response produced after a redirect is then stored under the original key, even when the redirect crossed to a different origin.\n\nAn attacker who controls the target of a redirect from a trusted URL can have their response cached under that trusted URL. A later caller requesting the trusted URL receives the attacker's body from the shared cache without either origin being contacted, allowing persistent cache poisoning. The same key confusion also discloses private data: when an authenticated request returns a `private, no-store` redirect to a user-specific resource, the final response is stored under the original URL and can be served to a later unauthenticated caller.\n\nThe cache interceptor was introduced in undici 7.0.0, and all 7.x and 8.x releases before the patched versions are affected. Applications are affected only when an originless `Agent`, a shared `MemoryCacheStore` or `SqliteCacheStore`, and the composition `compose(redirect(), cache())` are all used. Origin-bound `Client` and `Pool` dispatchers, and the reverse composition `compose(cache(), redirect())`, are not affected.\n\n### Patches\n\nUpgrade to `7.30.1` or `8.12.2`. Before storing a response, undici now verifies that the origin that produced it still matches the cache key, and preserves each redirect hop's cache-control policy, so cross-origin redirect responses and responses behind a `no-store` or `private` hop are no longer cached under the original key.\n\n### Workarounds\n\nCompose the interceptors as `compose(cache(), redirect())`, use per-origin dispatchers and cache stores, or disable shared caching on redirect-capable requests.",
+      "epss": {
+        "percentage": 0.00149,
+        "percentile": 0.03691
+      },
+      "ghsa_id": "GHSA-4w7w-5xrc-9h26",
+      "identifiers": [
+        {
+          "type": "GHSA",
+          "value": "GHSA-4w7w-5xrc-9h26"
+        },
+        {
+          "type": "CVE",
+          "value": "CVE-2026-109829"
+        }
+      ],
+      "published_at": "2026-10-27T19:02:31Z",
+      "references": [
+        {
+          "url": "https://github.com/nodejs/undici/security/advisories/GHSA-4w7w-5xrc-9h26"
+        },
+        {
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-109829"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/commit/26c2bfb3def0b67241ce878e80657ed5d6c3efa8"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/commit/b20b82ad80a405a12b6ce1f341bcd418de390aa0"
+        },
+        {
+          "url": "https://cna.openjsf.org/security-advisories.html"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/releases/tag/v7.30.1"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/releases/tag/v8.12.2"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-4w7w-5xrc-9h26"
+        }
+      ],
+      "severity": "high",
+      "summary": "undici vulnerable to cache poisoning and cross-user disclosure via cross-origin redirects",
+      "updated_at": "2026-10-27T19:02:32Z",
+      "vulnerabilities": [
+        {
+          "first_patched_version": {
+            "identifier": "7.30.1"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "undici"
+          },
+          "severity": "high",
+          "vulnerable_version_range": ">= 7.0.0, < 7.30.1"
+        },
+        {
+          "first_patched_version": {
+            "identifier": "8.12.2"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "undici"
+          },
+          "severity": "high",
+          "vulnerable_version_range": ">= 8.0.0, < 8.12.2"
+        }
+      ],
+      "withdrawn_at": null
+    },
+    "security_vulnerability": {
+      "first_patched_version": {
+        "identifier": "7.30.1"
+      },
+      "package": {
+        "ecosystem": "npm",
+        "name": "undici"
+      },
+      "severity": "high",
+      "vulnerable_version_range": ">= 7.0.0, < 7.30.1"
+    },
+    "state": "open",
+    "updated_at": "2026-11-04T07:12:21Z",
+    "url": "https://api.github.com/repos/ignaciojimenez/pastebin-worker/dependabot/alerts/123"
+  },
+  {
+    "assignees": [],
+    "auto_dismissed_at": null,
+    "created_at": "2026-11-01T02:20:57Z",
+    "dependency": {
+      "manifest_path": "pnpm-lock.yaml",
+      "package": {
+        "ecosystem": "npm",
+        "name": "undici"
+      },
+      "relationship": "transitive",
+      "scope": "development",
+      "version_requirement": "7.29.1"
+    },
+    "dismissal_request": null,
+    "dismissed_at": null,
+    "dismissed_by": null,
+    "dismissed_comment": null,
+    "dismissed_reason": null,
+    "fixed_at": null,
+    "html_url": "https://github.com/ignaciojimenez/pastebin-worker/security/dependabot/120",
+    "number": 120,
+    "reachability": {
+      "verdict": "disabled"
+    },
+    "security_advisory": {
+      "classification": "general",
+      "cve_id": "CVE-2026-109869",
+      "cvss": {
+        "score": 7.5,
+        "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+      },
+      "cvss_severities": {
+        "cvss_v3": {
+          "score": 7.5,
+          "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+        },
+        "cvss_v4": {
+          "score": 0.0,
+          "vector_string": null
+        }
+      },
+      "cwes": [
+        {
+          "cwe_id": "CWE-248",
+          "name": "Uncaught Exception"
+        },
+        {
+          "cwe_id": "CWE-459",
+          "name": "Incomplete Cleanup"
+        }
+      ],
+      "description": "### Impact\n\nundici's `fetch()` crashes the Node.js process when a malicious server returns a response with more than five content codings and closes the connection before sending the body. undici rejects such responses (a content-encoding limit), but it created the internal response stream before that check and returned without attaching an error listener or aborting the request. The early close then surfaces a content-length mismatch on that orphaned internal stream, which Node.js treats as an unhandled `error` and terminates the process. A remote, unauthenticated server can trigger this with a single response, even when the application correctly catches the `fetch()` rejection. undici 6.x, 7.x, and 8.x are affected.\n\n### Patches\n\nUpgrade to `6.29.1`, `7.30.1`, or `8.12.2`. undici now validates the content-encoding chain before creating the internal body stream and aborts the response when the limit is exceeded, so no error can surface on an orphaned stream.\n\n### Workarounds\n\nNone.",
+      "epss": {
+        "percentage": 0.00344,
+        "percentile": 0.27642
+      },
+      "ghsa_id": "GHSA-xjj6-f33q-929c",
+      "identifiers": [
+        {
+          "type": "GHSA",
+          "value": "GHSA-xjj6-f33q-929c"
+        },
+        {
+          "type": "CVE",
+          "value": "CVE-2026-109869"
+        }
+      ],
+      "published_at": "2026-10-23T22:14:31Z",
+      "references": [
+        {
+          "url": "https://github.com/nodejs/undici/security/advisories/GHSA-xjj6-f33q-929c"
+        },
+        {
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-109869"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/commit/07ded4941b1e72afec862958c3b8ddf468f3b429"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/commit/1325a87dfb3492f8e87e6b0a84b3bda4e82e3436"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/commit/b5084c7dc239172d75c336b1cd51ddac023938a5"
+        },
+        {
+          "url": "https://cna.openjsf.org/security-advisories.html"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/releases/tag/v6.29.1"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/releases/tag/v7.30.1"
+        },
+        {
+          "url": "https://github.com/nodejs/undici/releases/tag/v8.12.2"
+        },
+        {
+          "url": "https://github.com/advisories/GHSA-xjj6-f33q-929c"
+        }
+      ],
+      "severity": "high",
+      "summary": "undici vulnerable to Denial of Service via unhandled error on excessive content-encodings",
+      "updated_at": "2026-10-23T22:14:32Z",
+      "vulnerabilities": [
+        {
+          "first_patched_version": {
+            "identifier": "6.29.1"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "undici"
+          },
+          "severity": "high",
+          "vulnerable_version_range": ">= 6.23.0, < 6.29.1"
+        },
+        {
+          "first_patched_version": {
+            "identifier": "7.30.1"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "undici"
+          },
+          "severity": "high",
+          "vulnerable_version_range": ">= 7.18.0, < 7.30.1"
+        },
+        {
+          "first_patched_version": {
+            "identifier": "8.12.2"
+          },
+          "package": {
+            "ecosystem": "npm",
+            "name": "undici"
+          },
+          "severity": "high",
+          "vulnerable_version_range": ">= 8.0.0, < 8.12.2"
+        }
+      ],
+      "withdrawn_at": null
+    },
+    "security_vulnerability": {
+      "first_patched_version": {
+        "identifier": "7.30.1"
+      },
+      "package": {
+        "ecosystem": "npm",
+        "name": "undici"
+      },
+      "severity": "high",
+      "vulnerable_version_range": ">= 7.18.0, < 7.30.1"
+    },
+    "state": "open",
+    "updated_at": "2026-11-01T02:20:57Z",
+    "url": "https://api.github.com/repos/ignaciojimenez/pastebin-worker/dependabot/alerts/120"
+  }
+]

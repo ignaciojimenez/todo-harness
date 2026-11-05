@@ -122,7 +122,11 @@ def reconcile(
     that is clean, and only the source knows which it was.
     """
     findings = list(findings)
-    actionable = {f.key: f for f in findings if f.lane is not Lane.SILENT}
+    actionable: dict[str, Finding] = {}
+    for f in findings:
+        # Two manifests can share a marker, and a PAGE must survive the other's PLAN.
+        if f.lane is not Lane.SILENT and (f.key not in actionable or f.lane is Lane.PAGE):
+            actionable[f.key] = f
     silent = {f.key for f in findings} - actionable.keys()
 
     live = [i for i in managed if not i.closed]
@@ -201,6 +205,12 @@ def _drift(issue: Issue, finding: Finding, policy: Policy) -> Update | None:
     marker points at the live source anyway.
 
     What is corrected is what the contract owns: labels, project, priority.
+
+    🔴 A finding that reaches PAGE on an issue that already exists carries its
+    page on the priority change. EPSS moves on alerts that already have issues,
+    so this is the common way to become exploited, and paging only on `Open`
+    meant it raised a priority and woke nobody. The priority is the record that
+    the page went out, so the next sweep stays quiet with no second store.
     """
     reasons: list[str] = []
     project = None
@@ -233,4 +243,5 @@ def _drift(issue: Issue, finding: Finding, policy: Policy) -> Update | None:
         priority=priority,
         add_labels=frozenset(add),
         remove_labels=frozenset(remove),
+        page=finding if priority is not None and finding.lane is Lane.PAGE else None,
     )

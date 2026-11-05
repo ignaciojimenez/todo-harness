@@ -141,6 +141,8 @@ class Update:
     priority: int | None = None
     add_labels: frozenset[str] = frozenset()
     remove_labels: frozenset[str] = frozenset()
+    page: Finding | None = None
+    """Set when this update escalates an existing issue to PAGE."""
 
 
 @dataclass(frozen=True, slots=True)
