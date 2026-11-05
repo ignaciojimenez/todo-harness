@@ -19,6 +19,7 @@ planned alongside rather than instead.
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import urllib.error
@@ -34,6 +35,13 @@ from ..ports import Tracker
 from ..reconcile import Policy, reconcile
 
 API = "https://api.github.com"
+
+TRANSPORT_ERRORS = (OSError, http.client.HTTPException, ValueError)
+"""What a request can raise that says nothing about the answer. `urlopen` wraps
+only errors from sending: reading the response raises `RemoteDisconnected`,
+`ConnectionResetError` or `IncompleteRead` raw, and a proxy's HTML page fails as
+`ValueError` in `json.loads`. Each one means the sweep could not see, so it marks
+the sweep incomplete rather than crashing it."""
 
 EXPOSURE: dict[str, list[tuple[str, str]]] = {
     "pastebin-worker": [
@@ -316,7 +324,7 @@ class SecuritySource:
                     raise GitHubError(f"GET {path} → HTTP 401: token rejected") from e
                 self.failures.append(f"{path} → HTTP {e.code}")
                 return out
-            except (urllib.error.URLError, TimeoutError) as e:
+            except TRANSPORT_ERRORS as e:
                 self.failures.append(f"{path} → {type(e).__name__}")
                 return out
             if not isinstance(data, list):
@@ -478,7 +486,7 @@ def _message(e: urllib.error.HTTPError) -> str:
     from "you may not look"."""
     try:
         return str(json.loads(e.read() or b"{}").get("message") or "")
-    except (ValueError, AttributeError, OSError):
+    except (*TRANSPORT_ERRORS, AttributeError):
         return ""
 
 
