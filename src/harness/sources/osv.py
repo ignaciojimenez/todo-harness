@@ -20,7 +20,9 @@ stays open until GitHub's alert closes too. Dropping it instead closed PER-89,
 Two things OSV does not give, which changes the routing:
 
 * **no dev/runtime scope** — the SBOM does not carry it either, so a build-only
-  dependency cannot be suppressed the way the GitHub source suppresses it;
+  dependency cannot be suppressed the way the GitHub source suppresses it. A
+  finding on a manifest the exposure map marks local opens in Backlog instead:
+  recorded, not queued, because nothing here can say it never runs;
 * **no EPSS** — so there is no evidence of active exploitation.
 
 Without exploitation evidence, nothing here pages. A page that cannot say
@@ -48,7 +50,7 @@ from typing import Iterable
 from ..models import Action, Finding, IssueQuery, Lane
 from ..ports import Tracker
 from ..reconcile import Policy, reconcile
-from .security import TRANSPORT_ERRORS, SecuritySource, exposure_of
+from .security import TRANSPORT_ERRORS, SecuritySource, exposure_of, intake
 
 OSV_BATCH = "https://api.osv.dev/v1/querybatch"
 OSV_QUERY = "https://api.osv.dev/v1/query"
@@ -210,7 +212,6 @@ class OsvSource:
     """Packages checked against OSV. A token losing dependency-graph access
     shrinks this long before anything else notices."""
 
-    silent: list = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
     """Dependencies that went unscanned, with the reason. Reported rather than
     dropped: an unpinned constraint is a coverage hole no scanner can close, and
@@ -407,7 +408,6 @@ class OsvSource:
         gaps = [d for d in deps if (d.repo, d.name.casefold()) not in covered]
         self.covered = len(deps) - len(gaps)
 
-        self.silent = []
         out: list[Finding] = [
             _still_true(d) for d in deps if (d.repo, d.name.casefold()) in covered
         ]
@@ -431,10 +431,8 @@ class OsvSource:
             dep = members[0][0]
             vulns = members[0][1]
             exposure = exposure_of(repo, manifest or None)
-            if exposure == "local":
-                self.silent.append((dep, "dependency of a local-only manifest"))
-                out.append(_still_true(dep))
-                continue
+            # A local manifest is shelved, not dropped: with no scope in the
+            # SBOM, OSV cannot tell build-time from a laptop tool that runs.
             out.append(Finding(
                 key=marker_url(dep),
                 title=f"{_what(dep)} in {repo.split('/')[-1]}"
@@ -443,6 +441,7 @@ class OsvSource:
                       "OSV reports and GitHub does not"[:120],
                 body=_body(dep, self._details(vulns), exposure),
                 lane=Lane.PLAN,
+                status=intake(Lane.PLAN, exposure),
                 labels=frozenset({self.managed_label}),
                 priority=2,
             ))

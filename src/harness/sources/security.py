@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Iterable
 
-from ..models import Action, Finding, IssueQuery, Lane
+from ..models import Action, Finding, IssueQuery, Lane, Status
 from ..ports import Tracker
 from ..reconcile import Policy, reconcile
 
@@ -159,6 +159,22 @@ def route(a: Alert) -> tuple[Lane, str]:
         return Lane.SILENT, "SAST finding in code that is not exposed"
 
     return Lane.PLAN, "unclassified — defaulting to human review"
+
+
+def intake(lane: Lane, exposure: str) -> Status:
+    """Where a security finding's issue starts: in the queue, or shelved.
+
+    Todo when the exposure is a real path (public, supplychain, unknown) or it
+    pages. Backlog only when the source cannot rule out that the finding is
+    build-time only. GitHub can rule it out, and its build-time alerts stay
+    silent, so this only shelves OSV findings on manifests the exposure map
+    marks local: OSV's SBOM carries no scope, so a local manifest is the
+    nearest thing to "build-time" it can see. A finding with no exposure, such
+    as a scanner switched off, is Todo too: nothing rules it out.
+    """
+    if lane is Lane.PAGE or exposure != "local":
+        return Status.TODO
+    return Status.BACKLOG
 
 
 _URGENCY = {Lane.SILENT: 0, Lane.PLAN: 1, Lane.PAGE: 2}
@@ -432,6 +448,7 @@ class SecuritySource:
                 title=_title(head, len(members)),
                 body=_body(head, members, why),
                 lane=lane,
+                status=intake(lane, head.exposure),
                 labels=frozenset({self.managed_label}),
                 priority=1 if lane is Lane.PAGE else 2,
             )

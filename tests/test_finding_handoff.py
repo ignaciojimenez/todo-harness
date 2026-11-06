@@ -248,12 +248,13 @@ def test_a_silent_alert_clears_an_absence_mark(monkeypatch):
 
 
 def test_a_local_manifest_finding_keeps_its_issue(monkeypatch):
-    """OSV's own silent lane. An exposure edit moves a finding, it does not fix
-    it, so the issue must not read that as absence."""
+    """An exposure edit moves a finding to Backlog, it does not fix it, so the
+    issue must not read that as absence — nor be moved there: an issue that
+    already exists keeps the status a human gave it."""
     src = _osv(monkeypatch, {"shell-quote": "1.10.0"}, alerts=[])
     monkeypatch.setattr("harness.sources.osv.exposure_of", lambda repo, path: "local")
-    assert list(src.plan(Tracker(_issue(_key("shell-quote"))))) == []
-    assert src.silent, "the silent note still prints"
+    actions = list(src.plan(Tracker(_issue(_key("shell-quote"), priority=2))))
+    assert actions == []
 
 
 # ── the policy is not changed here ───────────────────────────────────────────

@@ -2,7 +2,8 @@
 
 Linear-specific knowledge is confined to this file — the filter language, the
 uuid/identifier split, the fact that closing means moving to a state of type
-`completed`. Nothing above this layer knows any of it.
+`completed` and that Todo is the state of type `unstarted`. Nothing above this
+layer knows any of it.
 """
 
 from __future__ import annotations
@@ -24,8 +25,14 @@ from ..models import (
     MarkAbsent,
     MarkPresent,
     Open,
+    Status,
     Update,
 )
+
+STATE_TYPE = {Status.TODO: "unstarted", Status.BACKLOG: "backlog"}
+"""A new issue's status, as the Linear state type that holds it. Looked up by
+type, like `completed`, so a renamed or recreated state keeps working and no
+team's ids are written down here."""
 
 MARKER_SUBTITLE = "harness identity"
 """Attachments carrying this subtitle are the harness's markers. Linear
@@ -65,6 +72,7 @@ class LinearTracker:
         self._project_ids: dict[str, str] | None = None
         self._team_id: str | None = None
         self._done_state: str | None = None
+        self._open_states: dict[Status, str] = {}
 
     # ── transport ────────────────────────────────────────────────────────────
 
@@ -165,10 +173,18 @@ class LinearTracker:
         if not nodes:
             raise LinearError(f"no team with key {self.team_key!r}")
         self._team_id = nodes[0]["id"]
-        done = [s for s in nodes[0]["states"]["nodes"] if s["type"] == "completed"]
-        if not done:
-            raise LinearError(f"team {self.team_key!r} has no completed state")
-        self._done_state = done[0]["id"]
+        states = nodes[0]["states"]["nodes"]
+
+        def first(kind: str) -> str:
+            # Not a fallback to the team default when one is missing: that
+            # default is how every finding landed in Backlog unread.
+            found = [s["id"] for s in states if s["type"] == kind]
+            if not found:
+                raise LinearError(f"team {self.team_key!r} has no {kind} state")
+            return found[0]
+
+        self._done_state = first("completed")
+        self._open_states = {status: first(kind) for status, kind in STATE_TYPE.items()}
 
     def _label_id(self, name: str) -> str:
         if self._label_ids is None:
@@ -225,6 +241,8 @@ class LinearTracker:
             "teamId": self._team_id,
             "title": f.title,
             "description": f.body,
+            # Always explicit. Left out, Linear uses the team default, Backlog.
+            "stateId": self._open_states[f.status],
         }
         if f.labels:
             payload["labelIds"] = [self._label_id(n) for n in sorted(f.labels)]
@@ -245,6 +263,7 @@ class LinearTracker:
         self._attach(created["id"], f.key, {})
 
     def _update(self, action: Update) -> None:
+        # Never a stateId: an existing issue's status is the human's. See `Update`.
         payload: dict = {}
         if action.title is not None:
             payload["title"] = action.title
@@ -260,15 +279,27 @@ class LinearTracker:
             self._mutate(action.issue_id, payload)
 
     def _merged_label_ids(self, action: Update) -> list[str]:
-        """Linear replaces the whole label set, so compute it from current state."""
-        current = self._gql(
-            "query($id: String!) { issue(id: $id) { labels { nodes { name } } } }",
+        """Linear replaces the whole label set, so compute it from current state.
+
+        🔴 Current labels keep the ids they came with, keyed by composed path.
+        Reading back names alone gave `sec` for `agent/sec`, which the
+        path-keyed lookup could not resolve, so any label update on an issue
+        with a grouped label raised — and every contract label is grouped.
+        """
+        nodes = self._gql(
+            """
+            query($id: String!) {
+              issue(id: $id) { labels { nodes { id name parent { name } } } }
+            }
+            """,
             {"id": action.issue_id},
         )["issue"]["labels"]["nodes"]
-        names = {n["name"] for n in current}
-        names |= set(action.add_labels)
-        names -= set(action.remove_labels)
-        return [self._label_id(n) for n in sorted(names)]
+        current = {_label_path(n): n["id"] for n in nodes}
+        for name in action.add_labels:
+            current[name] = self._label_id(name)
+        for name in action.remove_labels:
+            current.pop(name, None)
+        return [current[n] for n in sorted(current)]
 
     def _comment(self, issue_id: str, body: str) -> None:
         self._gql(

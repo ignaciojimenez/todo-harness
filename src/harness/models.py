@@ -27,6 +27,23 @@ class Lane(str, Enum):
     SILENT = "silent"  # recorded for audit, never opens an issue, keeps one open
 
 
+class Status(str, Enum):
+    """Where a new issue starts. Set once, at creation, and never again.
+
+    Separate from the lane: a lane says whether a finding is an issue at all,
+    and this says whether the queue reads it. **Never left to the tracker's
+    default.** Linear's is Backlog, which the queue rules call shelved and
+    unread, so every finding opened that way was invisible: PER-138, a Go
+    stdlib advisory on touchid-agent, sat unseen from 2026-10-21 to 11-05.
+
+    Once the issue exists its status is the human's. Nothing here can move it:
+    `Update` has no status field, on purpose.
+    """
+
+    TODO = "todo"  # the queue: read and worked
+    BACKLOG = "backlog"  # recorded, deliberately not in the queue
+
+
 @dataclass(frozen=True, slots=True)
 class Finding:
     """Something a source asserts is true *right now*.
@@ -71,6 +88,9 @@ class Finding:
     title: str
     body: str = ""
     lane: Lane = Lane.PLAN
+    status: Status = Status.TODO
+    """Where the issue starts if this opens one. Todo unless the source has a
+    reason to shelve it; see `security.intake()` for the security rule."""
     labels: frozenset[str] = frozenset()
     project: str | None = None
     priority: int | None = None
@@ -133,6 +153,13 @@ class Open:
 
 @dataclass(frozen=True, slots=True)
 class Update:
+    """What the contract owns on an issue that already exists.
+
+    🔴 No status field, so no sweep can move one. Once an issue exists its
+    status is a human's: Todo → In Progress is someone starting the work, and
+    a sweep that moved it back would undo them every six hours.
+    """
+
     issue_id: str
     why: str
     title: str | None = None

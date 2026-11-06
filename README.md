@@ -42,6 +42,9 @@ printing the return value. Run it against production and nothing happens.
   a human takes an issue and the harness goes quiet without being told.
 - **A heartbeat every run, including empty ones.** A sweep that only speaks when
   it finds something is indistinguishable from one that died a fortnight ago.
+- **A new issue lands in the queue, then its status is yours.** It never takes
+  the tracker's default, which is where unread work goes; only a finding the
+  source cannot rule out as build-time starts shelved. No sweep moves it after.
 - **Silent findings never become issues, and never close one.** A queue is for
   actions, but moving between sources or lanes is not the same as being fixed.
 
