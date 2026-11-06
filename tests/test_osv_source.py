@@ -147,7 +147,7 @@ from pathlib import Path
 
 import pytest
 
-from harness.models import Lane
+from harness.models import Lane, Status
 from harness.sources.osv import OsvSource, _body, _ours, go_runtime
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -299,16 +299,27 @@ def test_two_modules_in_one_repo_are_two_findings(monkeypatch):
     assert len({marker_url(d) for d in deps}) == 2
 
 
-def test_a_runtime_in_a_local_manifest_goes_silent(monkeypatch):
+def test_a_runtime_in_a_local_manifest_opens_in_backlog(monkeypatch):
     """pastebin-worker's scripts/ is a laptop CLI; the exposure map is
-    manifest-level, so its runtime routes the same way its packages do."""
+    manifest-level, so its runtime routes the same way its packages do. OSV
+    cannot rule out build-time, so it is recorded but kept out of the queue."""
     src = _source(monkeypatch, {"scripts/go.mod": "go 1.26.0\n"}, name="pastebin-worker")
     monkeypatch.setattr(src, "_osv_batch", lambda deps: [[{"id": "GO-1"}]])
     monkeypatch.setattr(src, "_details", lambda vulns: vulns)
     [finding] = src.findings()
-    assert finding.lane is Lane.SILENT, "still true, and it must open nothing"
-    [(dep, why)] = src.silent
-    assert dep.manifest == "scripts/go.mod" and "local" in why
+    assert finding.lane is Lane.PLAN
+    assert finding.status is Status.BACKLOG
+    assert "scripts/go.mod" in finding.key and "exposure **local**" in finding.body
+
+
+def test_a_runtime_in_a_shipped_manifest_opens_in_todo(monkeypatch):
+    """The control for the test above: same advisory, the repo's root go.mod,
+    which ships through the brew tap."""
+    src = _source(monkeypatch, {"go.mod": "go 1.26.0\n"})
+    monkeypatch.setattr(src, "_osv_batch", lambda deps: [[{"id": "GO-1"}]])
+    monkeypatch.setattr(src, "_details", lambda vulns: vulns)
+    [finding] = src.findings()
+    assert finding.status is Status.TODO and "exposure **supplychain**" in finding.body
 
 
 def test_an_unreadable_tree_marks_the_sweep_incomplete(monkeypatch):

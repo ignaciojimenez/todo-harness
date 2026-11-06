@@ -81,7 +81,10 @@ run on the box. Same binary, different `--sources`."""
 def describe(a: Action) -> str:
     match a:
         case Open():
-            return f"OPEN   {a.finding.key}  {a.finding.title}   ({a.why})"
+            return (
+                f"OPEN   {a.finding.key}  {a.finding.title}   "
+                f"({a.why}; starts in {a.finding.status.value})"
+            )
         case Update():
             bits = []
             if a.project:
