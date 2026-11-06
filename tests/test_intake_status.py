@@ -9,10 +9,8 @@ or it pages; Backlog only where the source cannot rule out build-time, which
 for OSV means a manifest the exposure map marks local. And once an issue
 exists, its status is the human's.
 
-Linear is faked in memory, down to the one behaviour this is about: an
-`issueCreate` with no `stateId` lands in the team default. The states are PER's
-as listed on 2026-11-06, so a test that passes here passes against the real
-type layout, not one invented to agree with the code.
+Linear is faked in memory (`linear_fake.py`), down to the one behaviour this is
+about: an `issueCreate` with no `stateId` lands in the team default.
 """
 
 from __future__ import annotations
@@ -28,63 +26,10 @@ from harness.runners.cli import describe
 from harness.sources.osv import Dep, OsvSource
 from harness.sources.security import SecuritySource, intake
 from harness.trackers.linear import LinearError, LinearTracker
+from linear_fake import PER_STATES, FakeLinear
 
 FIXTURES = Path(__file__).parent / "fixtures"
 UNDICI = json.loads((FIXTURES / "dependabot-alerts-undici-2026-11-04.json").read_text())
-
-PER_STATES = [
-    {"id": "s-review", "type": "started", "name": "In Review"},
-    {"id": "s-backlog", "type": "backlog", "name": "Backlog"},
-    {"id": "s-canceled", "type": "canceled", "name": "Canceled"},
-    {"id": "s-todo", "type": "unstarted", "name": "Todo"},
-    {"id": "s-done", "type": "completed", "name": "Done"},
-    {"id": "s-duplicate", "type": "duplicate", "name": "Duplicate"},
-    {"id": "s-progress", "type": "started", "name": "In Progress"},
-]
-"""PER's workflow states as `list_issue_statuses` returned them, ids replaced."""
-
-NAMES = {s["id"]: s["name"] for s in PER_STATES}
-
-
-class FakeLinear:
-    """Just enough of Linear's GraphQL to hold issue states."""
-
-    def __init__(self, states=PER_STATES, default="s-backlog"):
-        self.states = states
-        self.default = default
-        self.issues: dict[str, dict] = {}
-        self.updates: list[dict] = []
-
-    def __call__(self, query: str, variables: dict | None = None) -> dict:
-        v = variables or {}
-        if "teams(" in query:
-            return {"teams": {"nodes": [
-                {"id": "team", "states": {"nodes": self.states}}
-            ]}}
-        if "issueLabels" in query:
-            return {"issueLabels": {"nodes": [
-                {"id": "l-sec", "name": "sec", "parent": {"name": "agent"}}
-            ]}}
-        if "issueCreate" in query:
-            i = v["input"]
-            iid = f"issue-{len(self.issues) + 1}"
-            # Linear's own behaviour: no stateId means the team default.
-            self.issues[iid] = {**i, "stateId": i.get("stateId", self.default)}
-            return {"issueCreate": {"success": True,
-                                    "issue": {"id": iid, "identifier": iid}}}
-        if "issueUpdate" in query:
-            self.updates.append(v["input"])
-            self.issues[v["id"]].update(v["input"])
-            return {"issueUpdate": {"success": True}}
-        if "attachmentCreate" in query:
-            return {"attachmentCreate": {"success": True}}
-        if "labels { nodes { name } }" in query:
-            return {"issue": {"labels": {"nodes": [{"name": "sec"}]}}}
-        raise AssertionError(f"unexpected query: {query}")
-
-    def status(self, iid: str) -> str:
-        return NAMES[self.issues[iid]["stateId"]]
-
 
 def _tracker(monkeypatch, linear: FakeLinear) -> LinearTracker:
     t = LinearTracker(team_key="PER", api_key="k")
@@ -154,16 +99,14 @@ def test_a_local_finding_opens_in_backlog(monkeypatch):
 
 def test_an_update_leaves_a_status_the_human_set(monkeypatch):
     """Opened in Todo, moved to In Progress by hand, then everything an Update
-    can carry drifts at once. The issue stays In Progress.
-
-    Labels are left out: `_merged_label_ids` reads a grouped label back as its
-    bare name and cannot resolve it, a separate defect this fake surfaced."""
+    can carry drifts at once. The issue stays In Progress."""
     linear, iid = _open_one(monkeypatch, _security(monkeypatch, _runtime(UNDICI)))
     linear.issues[iid]["stateId"] = "s-progress"
     t = _tracker(monkeypatch, linear)
     t._project_ids = {"pastebin-worker": "p-1"}
     t.apply(Update(
         issue_id=iid, why="drift", project="pastebin-worker", priority=1,
+        add_labels=frozenset({"kind/risk"}), remove_labels=frozenset({"bug"}),
         title="t", body="b",
     ))
     assert linear.updates, "the update must actually have been sent"

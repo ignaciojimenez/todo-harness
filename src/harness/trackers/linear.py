@@ -279,15 +279,27 @@ class LinearTracker:
             self._mutate(action.issue_id, payload)
 
     def _merged_label_ids(self, action: Update) -> list[str]:
-        """Linear replaces the whole label set, so compute it from current state."""
-        current = self._gql(
-            "query($id: String!) { issue(id: $id) { labels { nodes { name } } } }",
+        """Linear replaces the whole label set, so compute it from current state.
+
+        🔴 Current labels keep the ids they came with, keyed by composed path.
+        Reading back names alone gave `sec` for `agent/sec`, which the
+        path-keyed lookup could not resolve, so any label update on an issue
+        with a grouped label raised — and every contract label is grouped.
+        """
+        nodes = self._gql(
+            """
+            query($id: String!) {
+              issue(id: $id) { labels { nodes { id name parent { name } } } }
+            }
+            """,
             {"id": action.issue_id},
         )["issue"]["labels"]["nodes"]
-        names = {n["name"] for n in current}
-        names |= set(action.add_labels)
-        names -= set(action.remove_labels)
-        return [self._label_id(n) for n in sorted(names)]
+        current = {_label_path(n): n["id"] for n in nodes}
+        for name in action.add_labels:
+            current[name] = self._label_id(name)
+        for name in action.remove_labels:
+            current.pop(name, None)
+        return [current[n] for n in sorted(current)]
 
     def _comment(self, issue_id: str, body: str) -> None:
         self._gql(
