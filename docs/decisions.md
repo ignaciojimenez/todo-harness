@@ -2,6 +2,10 @@
 
 One-liner record of architecture/strategy calls. Newest first.
 
+## 2026-11-08
+
+- **The dead-man's switch fires after 18h with no ping: Period 12h, Grace 6h (Ignacio, 2026-11-06).** This replaces the 2026-10-03 sizing. Measured over 191 scheduled runs since 2026-09-12: GitHub now drops two of the four daily slots on some days, and five gaps went past 12h (the longest is 13.5h, on 2026-10-13), each paging `#home-alerts` while every run succeeded. The check exists to catch a dead sweep, and none of those sweeps was dead, so the 12h line was firing on GitHub's scheduler rather than on the harness. The cadence is therefore "about twice a day, best effort". A finding can already take up to 13.5h to arrive, and this change does not alter that. 18h is 4.5h above the worst gap seen, and still within one missed run at twice a day. A dedicated scheduler is still rejected, for the same reason as before. If gaps pass 18h, it pages, and that is correct.
+
 ## 2026-11-06
 
 - 🔴 **A security finding opens in Todo, never the tracker's default (Ignacio, 2026-11-05).** Every issue the harness opened took Linear's team default, Backlog, which the queue rules call shelved and unread, so every finding was invisible: PER-138, a Go stdlib advisory on touchid-agent, sat unseen from 2026-10-21 to 11-05. Todo when the exposure is a real path (public, supplychain, unknown) or the finding pages. Backlog only where the source cannot rule out build-time: OSV's SBOM has no scope, so that is an OSV finding on a manifest the exposure map marks local. Those were silent until now, so they now open, in Backlog, rather than being dropped. In practice that is only a Go runtime in pastebin-worker's `scripts/`: every repo's map ends in a `""` prefix, so an SBOM package, which has no manifest, never reads as local. A finding with no exposure, such as a scanner switched off, opens in Todo. The state is found by type (`unstarted`, `backlog`), like `completed`, and a team without one refuses rather than falling back to the default.
